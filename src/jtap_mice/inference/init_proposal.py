@@ -6,7 +6,7 @@ from genjax import ChoiceMapBuilder as C
 
 from .data_driven import data_driven_size_and_position
 
-from jtap.distributions import truncatednormposition2d
+from jtap_mice.distributions import truncatednormposition2d
 
 class InitProposalRetval(NamedTuple):
     init_prop_x: jnp.ndarray

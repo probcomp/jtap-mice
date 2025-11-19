@@ -1,13 +1,13 @@
 # %%
-import jtap
-jtap.set_jaxcache()
-from jtap.model import full_init_model, full_step_model, likelihood_model, stepper_model, get_render_args,is_ball_in_valid_position, red_green_sensor_readouts
-from jtap.inference import run_jtap, run_parallel_jtap, JTAPData, pad_obs_with_last_frame
-from jtap.viz import rerun_jtap_stimulus, rerun_jtap_single_run, jtap_plot_rg_lines, red_green_viz_notebook, create_log_frequency_heatmaps
-from jtap.utils import load_red_green_stimulus, JTAPStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees, multislice_pytree
-from jtap.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results
-from jtap.distributions import truncated_normal_sample, discrete_normal_sample
-from jtap.core import SuperPytree
+import jtap_mice
+jtap_mice.set_jaxcache()
+from jtap_mice.model import full_init_model, full_step_model, likelihood_model, stepper_model, get_render_args,is_ball_in_valid_position, red_green_sensor_readouts
+from jtap_mice.inference import run_jtap, run_parallel_jtap, JTAPData, pad_obs_with_last_frame
+from jtap_mice.viz import rerun_jtap_stimulus, rerun_jtap_single_run, jtap_plot_rg_lines, red_green_viz_notebook, create_log_frequency_heatmaps
+from jtap_mice.utils import load_red_green_stimulus, JTAPStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees, multislice_pytree
+from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results
+from jtap_mice.distributions import truncated_normal_sample, discrete_normal_sample
+from jtap_mice.core import SuperPytree
 
 import os
 import copy
@@ -98,7 +98,7 @@ def run_all_cogsci_trials(num_jtap_runs, Model_Input, num_particles, smc_key_see
     experiment_results = copy.deepcopy(base_experiment_results)
     for i in tqdm(range(1,51), desc = "Loading all CogSci Stimuli"):
         COGSCI_TRIAL = f'E{i}'
-        stimulus_path = f'/home/arijitdasgupta/jtap/assets/stimuli/cogsci_2025_trials/{COGSCI_TRIAL}'
+        stimulus_path = f'/home/arijitdasgupta/jtap-mice/assets/stimuli/cogsci_2025_trials/{COGSCI_TRIAL}'
         jtap_stimulus = load_red_green_stimulus(stimulus_path, pixel_density = PIXEL_DENSITY, skip_t = SKIP_T)
         jtap_stimuli[COGSCI_TRIAL] = jtap_stimulus
         max_inference_steps = max(max_inference_steps, jtap_stimulus.num_frames)

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.special import logsumexp
 from typing import NamedTuple
 
-from jtap.inference import JTAPData
+from jtap_mice.inference import JTAPData
 
 class JTAP_Beliefs(NamedTuple):
     model_beliefs: np.ndarray

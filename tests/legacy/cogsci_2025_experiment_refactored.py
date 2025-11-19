@@ -1,6 +1,6 @@
 
-import jtap
-jtap.set_jaxcache()
+import jtap_mice
+jtap_mice.set_jaxcache()
 
 import jax
 import os
@@ -14,7 +14,7 @@ from termcolor import colored
 import genjax
 from genjax import gen
 from genjax import ChoiceMapBuilder as C
-from jtap.all import *
+from jtap_mice.all import *
 import jax.tree_util as jtu
 import numpy as np
 import pingouin as pg

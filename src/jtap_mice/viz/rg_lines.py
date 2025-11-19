@@ -1,6 +1,6 @@
-from jtap.evaluation import JTAP_Beliefs, JTAP_Decisions, JTAP_Metrics
-from jtap.utils import JTAPStimulus
-from jtap.viz.figure_visuals import draw_stimulus_image
+from jtap_mice.evaluation import JTAP_Beliefs, JTAP_Decisions, JTAP_Metrics
+from jtap_mice.utils import JTAPStimulus
+from jtap_mice.viz.figure_visuals import draw_stimulus_image
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import matplotlib.pyplot as plt

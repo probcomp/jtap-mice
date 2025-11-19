@@ -9,9 +9,9 @@ from matplotlib.lines import Line2D
 from scipy.stats import pearsonr
 import seaborn as sns
 from jax.scipy.special import logsumexp
-from jtap.evaluation import get_rg_raw_beliefs, JTAP_Metrics, CombinedJTAP_Metrics, DecisionMetrics, CombinedDecisionMetrics
-from jtap.inference import JTAPData
-from jtap.utils import discrete_obs_to_rgb, d2r, r2d
+from jtap_mice.evaluation import get_rg_raw_beliefs, JTAP_Metrics, CombinedJTAP_Metrics, DecisionMetrics, CombinedDecisionMetrics
+from jtap_mice.inference import JTAPData
+from jtap_mice.utils import discrete_obs_to_rgb, d2r, r2d
 
 def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, video_offset=(0, 0), viz_key=jax.random.PRNGKey(0), 
                   min_dot_alpha=0.2, min_line_alpha=0.04,

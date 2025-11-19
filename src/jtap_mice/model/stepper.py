@@ -1,9 +1,9 @@
 import jax.numpy as jnp
 import genjax
 from genjax import gen
-from jtap.distributions import circular_normal
+from jtap_mice.distributions import circular_normal
 from .collision import velocity_transform
-from jtap.utils import ModelOutput
+from jtap_mice.utils import ModelOutput
 
 @gen
 def stepper_model(mo, mi, inference_mode_bool):

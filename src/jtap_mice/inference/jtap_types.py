@@ -4,8 +4,8 @@ import jax.numpy as jnp
 
 from .grid_inference import GridData
 
-from jtap.utils import ChexModelInput
-from jtap.utils import JTAPStimulus
+from jtap_mice.utils import ChexModelInput
+from jtap_mice.utils import JTAPStimulus
 
 # There are so many JTAP types that are defined in the inference package that it makes sense to have a separate file for them.
 

@@ -18,9 +18,9 @@ from PIL import Image
 from scipy.stats import vonmises
 from tqdm import tqdm
 
-from jtap.utils import discrete_obs_to_rgb, slice_pt
-from jtap.inference import JTAPData
-from jtap.evaluation import compute_weight_component_correlations, get_rg_raw_beliefs
+from jtap_mice.utils import discrete_obs_to_rgb, slice_pt
+from jtap_mice.inference import JTAPData
+from jtap_mice.evaluation import compute_weight_component_correlations, get_rg_raw_beliefs
 
 def rerun_jtap_single_run(
     JTAP_DATA,

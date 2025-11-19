@@ -46,22 +46,22 @@ else:
     def p(*args, **kwargs):
         print(*args, **kwargs)
 
-# Add the src directory to the path so we can import jtap modules
+# Add the src directory to the path so we can import jtap_mice modules
 script_dir = Path(__file__).parent
 project_root = script_dir.parent
 src_dir = project_root / "src"
 sys.path.insert(0, str(src_dir))
 
-import jtap
-jtap.set_jaxcache()
+import jtap_mice
+jtap_mice.set_jaxcache()
 
-from jtap.model import full_init_model, full_step_model, likelihood_model, stepper_model, get_render_args, is_ball_in_valid_position, red_green_sensor_readouts
-from jtap.inference import run_jtap, run_parallel_jtap, JTAPData
-from jtap.viz import jtap_plot_rg_lines, create_log_frequency_heatmaps
-from jtap.utils import load_red_green_stimulus, JTAPStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees
-from jtap.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results, compute_combined_metrics
-from jtap.distributions import truncated_normal_sample, discrete_normal_sample
-from jtap.core import SuperPytree
+from jtap_mice.model import full_init_model, full_step_model, likelihood_model, stepper_model, get_render_args, is_ball_in_valid_position, red_green_sensor_readouts
+from jtap_mice.inference import run_jtap, run_parallel_jtap, JTAPData
+from jtap_mice.viz import jtap_plot_rg_lines, create_log_frequency_heatmaps
+from jtap_mice.utils import load_red_green_stimulus, JTAPStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees
+from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results, compute_combined_metrics
+from jtap_mice.distributions import truncated_normal_sample, discrete_normal_sample
+from jtap_mice.core import SuperPytree
 
 def load_hyperparams(config_path: str) -> Tuple[Dict, Dict]:
     with open(config_path, 'r') as f:
@@ -145,7 +145,7 @@ def create_model_input(model_hyperparams: Dict) -> ChexModelInput:
     )
 
 def create_compressed_results(jtap_results: JTAP_Results) -> JTAP_Results:
-    from jtap.inference.jtap_types import WeightData, PredictionData, JTAPInference
+    from jtap_mice.inference.jtap_types import WeightData, PredictionData, JTAPInference
 
     minimal_weight_data = WeightData(
         prop_weights=None,

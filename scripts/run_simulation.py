@@ -45,7 +45,7 @@ else:
 
 # Try to import distractor functions if they exist
 try:
-    from jtap.simulation.distractors import simulate_key_distractor, generate_random_distractors
+    from jtap_mice.simulation.distractors import simulate_key_distractor, generate_random_distractors
     DISTRACTOR_FUNCTIONS_AVAILABLE = True
 except ImportError:
     DISTRACTOR_FUNCTIONS_AVAILABLE = False

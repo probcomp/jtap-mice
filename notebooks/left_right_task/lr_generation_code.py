@@ -17,9 +17,9 @@ import genjax
 from genjax import gen, Pytree, ExactDensity, ChoiceMapBuilder as C
 
 # JTAP imports
-from jtap.core import SuperPytree
-from jtap.distributions import uniformcat, labcat
-from jtap.utils import init_step_concat
+from jtap_mice.core import SuperPytree
+from jtap_mice.distributions import uniformcat, labcat
+from jtap_mice.utils import init_step_concat
 
 
 from IPython.display import HTML as HTML_Display

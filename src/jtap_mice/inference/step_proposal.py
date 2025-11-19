@@ -5,9 +5,9 @@ import genjax
 from genjax import gen, ChoiceMap
 from genjax import ChoiceMapBuilder as C
 
-from jtap.distributions import truncatednormposition2d, circular_normal
-from jtap.model import maybe_resolve_collision
-from jtap.utils.common_math import angle_diff_radians
+from jtap_mice.distributions import truncatednormposition2d, circular_normal
+from jtap_mice.model import maybe_resolve_collision
+from jtap_mice.utils.common_math import angle_diff_radians
 
 class TopDownData(NamedTuple):
     top_down_next_direction: jnp.ndarray

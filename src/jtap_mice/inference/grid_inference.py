@@ -3,7 +3,7 @@ import genjax
 from genjax import gen, ChoiceMapBuilder as C
 import jax.numpy as jnp
 from typing import NamedTuple
-from jtap.model import likelihood_model, is_ball_in_valid_position
+from jtap_mice.model import likelihood_model, is_ball_in_valid_position
 
 class GridData(NamedTuple):
     grid_proposed_xs: jnp.ndarray

@@ -14,8 +14,8 @@ from .grid_inference import grid_proposer, GridData, grid_likelihood_evaluator, 
 from .jtap_types import JTAPData, JTAPParams, JTAPInference, JTAPDataAllTrials, PredictionData, TrackingData, WeightData, jtap_data_to_numpy
 from .inference_utils import pad_obs_with_last_frame
 
-from jtap.model import full_init_model, full_step_model, stepper_model, red_green_sensor_readouts, stepper_model_no_obs
-from jtap.utils import effective_sample_size, init_step_concat, slice_pt, multislice_pytree
+from jtap_mice.model import full_init_model, full_step_model, stepper_model, red_green_sensor_readouts, stepper_model_no_obs
+from jtap_mice.utils import effective_sample_size, init_step_concat, slice_pt, multislice_pytree
 
 # Define all the jitted functions
 init_proposer= jax.vmap(init_proposal.propose, in_axes = (0,None))

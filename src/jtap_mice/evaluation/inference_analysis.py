@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from jtap.utils import softmax
+from jtap_mice.utils import softmax
 
 def compute_weight_component_correlations(jtap_data, run_idx=None):
     """

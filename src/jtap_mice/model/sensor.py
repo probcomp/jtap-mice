@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from jtap.utils import ModelOutput
+from jtap_mice.utils import ModelOutput
 
 def red_green_sensor_read(mo: ModelOutput):
     

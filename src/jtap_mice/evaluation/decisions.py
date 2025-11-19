@@ -1,9 +1,9 @@
 from typing import NamedTuple, Tuple
 import numpy as np
 
-from jtap.evaluation import JTAP_Beliefs
-from jtap.distributions import truncated_normal_sample, discrete_normal_sample
-from jtap.utils.stimuli import jtap_compute_outputs
+from jtap_mice.evaluation import JTAP_Beliefs
+from jtap_mice.distributions import truncated_normal_sample, discrete_normal_sample
+from jtap_mice.utils.stimuli import jtap_compute_outputs
 
 class JTAP_Decision_Model_Hyperparams(NamedTuple):
     key_seed: int

@@ -467,7 +467,7 @@ def load_original_jtap_results():
         original_jtap_results (dict): Dictionary containing the original JTAP results
     """
 
-    from jtap.utils import get_assets_dir
+    from jtap_mice.utils import get_assets_dir
     
     original_jtap_results_path = os.path.join(get_assets_dir(), 'original_jtap_data', 'original_jtap_results.pkl')
     with open(original_jtap_results_path, 'rb') as f:

@@ -3,7 +3,7 @@
 import jax
 import jax.numpy as jnp
 from genjax import Pytree, ExactDensity
-from jtap.utils import slice_pt
+from jtap_mice.utils import slice_pt
 
 @Pytree.dataclass
 class PixelFlipLikelihood(ExactDensity):

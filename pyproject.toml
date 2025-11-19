@@ -3,7 +3,7 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jtap"
+name = "jtap_mice"
 version = "0.1.0"
 description = "A Python library for probabilistic psychophysical modeling and inference of 2D Mental Physics"
 authors = [{ name = "Arijit Dasgupta", email = "arijitdg@mit.edu" }]

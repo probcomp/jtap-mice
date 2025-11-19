@@ -9,8 +9,8 @@ import numpy as np
 from typing import NamedTuple, Optional, List
 
 from .decisions import JTAP_Decisions
-from jtap.utils.stimuli import HumanData
-from jtap.utils.common_math import check_valid
+from jtap_mice.utils.stimuli import HumanData
+from jtap_mice.utils.common_math import check_valid
 
 
 class CorrelationMetrics:

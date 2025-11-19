@@ -7,9 +7,9 @@ import dataclasses
 from typing import Tuple, List, Dict
 from genjax import Mask
 
-from jtap.model.scene_geometry import get_edges_from_scene, get_corners_from_scene
-from jtap.utils.stimuli import JTAPStimulus
-from jtap.utils.common_math import d2r, r2d
+from jtap_mice.model.scene_geometry import get_edges_from_scene, get_corners_from_scene
+from jtap_mice.utils.stimuli import JTAPStimulus
+from jtap_mice.utils.common_math import d2r, r2d
 
 @chex.dataclass(frozen=True)
 class ChexModelInput:

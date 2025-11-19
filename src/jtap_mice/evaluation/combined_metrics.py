@@ -9,8 +9,8 @@ import numpy as np
 from typing import Dict, NamedTuple, Optional, List
 from .results import JTAP_Results
 from .metrics import CorrelationMetrics, extract_decision_probabilities, extract_conditional_green_probabilities, calculate_decision_weights, AnalysisData
-from jtap.utils.common_math import check_valid
-from jtap.utils.stimuli import HumanData
+from jtap_mice.utils.common_math import check_valid
+from jtap_mice.utils.stimuli import HumanData
 
 
 class CombinedDecisionMetrics(NamedTuple):
