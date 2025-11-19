@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from genjax import gen
 from jtap_mice.distributions import uniformcat
 from jtap_mice.utils import ModelOutput
-from .scene_geometry import get_edges_from_scene, get_corners_from_scene, is_ball_fully_hidden, is_ball_fully_visible
+from .scene_geometry import is_ball_fully_hidden, is_ball_fully_visible
 
 
 @gen

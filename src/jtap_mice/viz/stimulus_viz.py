@@ -1,5 +1,5 @@
 import rerun as rr
-from jtap_mice.utils.stimuli import discrete_obs_to_rgb, discrete_lr_obs_to_rgb
+from jtap_mice.utils.stimuli import discrete_obs_to_rgb
 
 def rerun_jtap_stimulus(rgb_video = None, discrete_obs = None, stimulus_name = None, rerun_url = "rerun+http://127.0.0.1:9876/proxy", is_lr = False):
 
@@ -12,10 +12,7 @@ def rerun_jtap_stimulus(rgb_video = None, discrete_obs = None, stimulus_name = N
         assert rgb_video is None, "Cannot provide both rgb_video and discrete_obs"
 
     if discrete_obs is not None:
-        if is_lr:
-            rgb_video = discrete_lr_obs_to_rgb(discrete_obs)
-        else:
-            rgb_video = discrete_obs_to_rgb(discrete_obs)
+        rgb_video = discrete_obs_to_rgb(discrete_obs)
 
     viz_name = "jtap_stimulus"
     if stimulus_name is not None:

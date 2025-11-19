@@ -679,7 +679,7 @@ wheels = [
 ]
 
 [[package]]
-name = "jtap"
+name = "jtap-mice"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

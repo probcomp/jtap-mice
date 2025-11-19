@@ -1,4 +1,4 @@
-from jtap_mice.evaluation import JTAPMice_Beliefs, JTAP_Decisions, JTAP_Metrics
+from jtap_mice.evaluation import JTAPMice_Beliefs
 from jtap_mice.utils import JTAPMiceStimulus
 from jtap_mice.viz.figure_visuals import draw_stimulus_image
 from matplotlib.gridspec import GridSpec
