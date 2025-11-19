@@ -1,0 +1,96 @@
+# JTAP Model and Decision Hyperparameters Configuration
+# This file contains the hyperparameters for both the JTAP model and decision model
+
+# Model Hyperparameters
+# These control the JTAP inference model behavior
+model_hyperparams:
+  # Model outlier probability
+  model_outlier_prob: 0.05
+
+  # Proposal direction outlier parameters (in degrees, converted to radians)
+  proposal_direction_outlier_tau: 69.23903340305576
+  proposal_direction_outlier_alpha: 4.792854003883506
+
+  # Initial model uncertainties (in degrees for direction, converted to radians)
+  σ_speed_init_model: 0.1149588040267572
+  σ_direction_init_model: 4.4026946190083285
+
+  # Position uncertainty (standard deviation)
+  σ_pos: 10000.0  # hardcoded to a large number to avoid issues with position jumps
+
+  # Speed uncertainty (standard deviation)
+  σ_speed: 0.1149588040267572
+
+  # Direction uncertainty for non-collision scenarios (in degrees, converted to radians)
+  σ_NOCOL_direction: 4.4026946190083285
+
+  # Direction uncertainty for collision scenarios (in degrees, converted to radians)
+  σ_COL_direction: 4.4026946190083285
+
+  # Probability of pixel being an outlier
+  pixel_corruption_prob: 0.01
+
+  # Grid dimensions
+  num_x_grid: 6
+  num_y_grid: 6
+
+  # Grid size bounds (min, max)
+  grid_size_bounds: [0.060959217282616586, 0.9456098523747187]
+
+  # Simulation uncertainties
+  σ_pos_sim: 0.04313257297080854
+  σ_speed_sim: 0.1149588040267572
+  σ_NOCOL_direction_sim: 4.4026946190083285
+  σ_COL_direction_sim: 4.4026946190083285
+
+  # Initial proposal uncertainties
+  σ_pos_initprop: 0.02
+  σ_speed_initprop: 0.448
+  σ_NOCOL_direction_initprop: 1.618
+  σ_COL_direction_prop: 1.618
+
+  # Step proposal uncertainties
+  σ_speed_stepprop: 0.448
+  σ_NOCOL_direction_stepprop: 1.618
+
+# Decision Model Hyperparameters
+# These control how the model makes decisions based on beliefs
+decision_hyperparams:
+  # Random seed for decision model
+  key_seed: 123
+
+  # Multiplier for pseudo-participants (affects decision variability)
+  pseudo_participant_multiplier: 50
+
+  # Decision model version (v4 is the current version)
+  decision_model_version: v4
+
+  # Press threshold hyperparameters (mean, std, min, max)
+  # Controls when participants decide to press a key
+  press_thresh_hyperparams:
+    mean: 0.5253067868385957
+    std: 0.030245679028864637
+    min: 0.0
+    max: 1.0
+
+  # Tau press hyperparameters (mean, std)
+  # Controls timing of keypresses
+  tau_press_hyperparams:
+    mean: 1
+    std: 0.01
+
+  # Hysteresis delay hyperparameters (set to null/None in hypertuning)
+  # Controls delay after keypress
+  hysteresis_delay_hyperparams: null
+
+  # Regular delay hyperparameters (mean, std)
+  # Controls regular decision delays
+  regular_delay_hyperparams:
+    mean: 4
+    std: 1.2362500260780824
+
+  # Starting delay hyperparameters (mean, std)
+  # Controls initial delay before first decision
+  starting_delay_hyperparams:
+    mean: 11
+    std: 3.794423573053696
