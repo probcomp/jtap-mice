@@ -1,0 +1,3 @@
+# Exclude Jupyter notebooks from language statistics
+*.ipynb linguist-generated=true
+
