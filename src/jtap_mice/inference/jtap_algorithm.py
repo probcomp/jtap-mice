@@ -50,7 +50,7 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         # the coded lr converts to the sensor reading during the timestep it hits the sensor
         # and stays static for the rest of the prediction steps. This way, we can just 
         # look at the last timestep to see which it hit (if it hit any)
-        coded_lr = jnp.where(coded_lr == jnp.int8(0), left_right_sensor_read(next_sim_mos), coded_lr)
+        coded_lr = jnp.where(coded_lr == jnp.int8(2), left_right_sensor_readouts(next_sim_mos, mi.scene_dim), coded_lr)
         prediction_data = PredictionData(x=next_sim_mos.x, y=next_sim_mos.y, speed=next_sim_mos.speed, direction=next_sim_mos.direction, hit_boundary=next_sim_mos.hit_boundary, is_switching_timestep=next_sim_mos.is_switching_timestep, lr=coded_lr)
         return (next_key, next_sim_mos, coded_lr), (prediction_data)
 
@@ -180,7 +180,7 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
             simulate_this_step,
             lambda: jax.lax.scan(
                 prediction,
-                (sim_key, step_mos, left_right_sensor_read(step_mos)),
+                (sim_key, step_mos, left_right_sensor_readouts(step_mos, mi.scene_dim)),
                 jnp.arange(max_prediction_steps)
             )[1],
             lambda: (prev_prediction_data)
@@ -228,13 +228,12 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
     initial_weights = init_weights - init_prop_weights
     init_mos = init_particles.get_retval()
 
-    _, (init_prediction_data, pred_stopped_early) = jax.lax.scan(
+    _, (init_prediction_data) = jax.lax.scan(
             prediction,
-            (sim_key, init_mos, red_green_sensor_readouts(init_mos)),
+            (sim_key, init_mos, left_right_sensor_readouts(init_mos, mi.scene_dim)),
             jnp.arange(max_prediction_steps)
         )
     
-    stopped_early = jnp.logical_or(jnp.any(init_mos.stopped_early), jnp.any(pred_stopped_early))
 
     init_tracking_data = TrackingData(
         x=init_mos.x,
@@ -277,7 +276,6 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         is_target_hidden=init_mos.is_target_hidden,
         is_target_partially_hidden=init_mos.is_target_partially_hidden,
         obs_is_fully_hidden=obs_is_fully_hidden,
-        stopped_early=stopped_early
     )
 
     # Initial carry state

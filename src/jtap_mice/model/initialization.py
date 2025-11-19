@@ -19,7 +19,7 @@ def init_model(mi):
     y = jnp.float32(0.)
 
     speed = genjax.uniform(jnp.float32(0.), mi.max_speed) @ "speed"
-    direction = uniformcat([-1.0, 1.0]) @ "direction" # -1 is left, 1 is right
+    direction = uniformcat(mi.direction_values) @ "direction" # -1 is left, 1 is right
 
     # check if the ball has hit the boundary
     hit_boundary = (x <= (0 + epsilon)) | (x >= (mi.scene_dim[0] - diameter - epsilon))

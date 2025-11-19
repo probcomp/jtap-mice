@@ -21,9 +21,14 @@ def find_valid_positions_bool(pos_chm, diameter, scene_length):
 
 grid_likelihood_evaluator = jax.vmap(
     likelihood_model.logpdf,
-    in_axes = (None,(
-        None,None,None,0,0,None,None,None,None,None
-    ),None, None, None, None)
+    in_axes=(
+        None,  # obs_image
+        (None, None, None, 0, 0, None, None),  # render_args -- see get_render_args in model.py (pix_x, pix_y, diameter, x, y, masked_occluders, image_discretization)
+        None,  # pixel_corruption_prob
+        None,  # tile_size_arr
+        None,  # σ_pixel_spatial
+        None   # image_power_beta
+    )
 )
 
 def adaptive_grid_size(num_obj_pixels, grid_size_bounds):

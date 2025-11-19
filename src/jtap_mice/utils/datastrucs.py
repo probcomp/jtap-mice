@@ -27,6 +27,7 @@ class ChexModelInput:
     num_x_grid : int
     num_y_grid : int
     grid_size_bounds : Tuple[float, float]
+    direction_values: List[float] = None
     image_discretization: float = None
     diameter: float = None
     scene_dim: Tuple[int, int] = None
@@ -35,7 +36,6 @@ class ChexModelInput:
     pix_y: jnp.ndarray = None
     tile_size_arr: jnp.ndarray = None
     masked_occluders : Mask = None
-    masked_barriers : Mask = None
     simulate_every : int = None
     σ_pos_sim: float = None
     σ_speed_sim: float = None
@@ -70,6 +70,7 @@ class ChexModelInput:
         self.update("pix_y", jnp.array(np.arange(0, self.scene_dim[1], self.image_discretization)[::-1]).astype(jnp.float32))
         masked_occluders = extract_masked_occluders(self.image_discretization, self.max_num_occ, initial_discrete_obs)
         self.update('masked_occluders', masked_occluders)
+        self.update('direction_values', jnp.array([-1.0, 1.0], dtype=jnp.float32))
 
 
 ModelOutput = namedtuple("ModelOutput", [

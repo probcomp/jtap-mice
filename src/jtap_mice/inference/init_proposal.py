@@ -1,6 +1,7 @@
 from typing import NamedTuple
 import jax
 import jax.numpy as jnp
+import genjax
 from genjax import gen
 from genjax import ChoiceMapBuilder as C
 
@@ -23,7 +24,7 @@ def init_proposal(init_proposal_args):
     scale = mi.image_discretization
     _, data_driven_x, *_ = data_driven_size_and_position(initial_discrete_obs, scale)
 
-    init_prop_x = genjax.truncated_normal((data_driven_x, pos_noise, 0., mi.scene_dim[0] - mi.diameter)) @ "x" # joint sampling of x and y
+    init_prop_x = genjax.truncated_normal(data_driven_x, pos_noise, 0., mi.scene_dim[0] - mi.diameter) @ "x" # joint sampling of x and y
     
     return InitProposalRetval(
         init_prop_x=init_prop_x,
