@@ -5,19 +5,19 @@ import jax.numpy as jnp
 from .grid_inference import GridData
 
 from jtap_mice.utils import ChexModelInput
-from jtap_mice.utils import JTAPStimulus
+from jtap_mice.utils import JTAPMiceStimulus
 
 # There are so many JTAP types that are defined in the inference package that it makes sense to have a separate file for them.
 
 def jtap_data_to_numpy(jtap_data):
     """
-    Recursively converts all JAX arrays in a JTAPData instance to numpy arrays.
+    Recursively converts all JAX arrays in a JTAPMiceData instance to numpy arrays.
     
     Args:
-        jtap_data: JTAPData instance containing JAX arrays
+        jtap_data: JTAPMiceData instance containing JAX arrays
         
     Returns:
-        JTAPData instance with all JAX arrays converted to numpy arrays
+        JTAPMiceData instance with all JAX arrays converted to numpy arrays
     """
     def convert_recursive(obj):
         if isinstance(obj, jnp.ndarray):
@@ -42,13 +42,13 @@ def jtap_data_to_numpy(jtap_data):
 
 def jtap_data_to_jax(jtap_data):
     """
-    Recursively converts all numpy arrays in a JTAPData instance to JAX arrays.
+    Recursively converts all numpy arrays in a JTAPMiceData instance to JAX arrays.
     
     Args:
-        jtap_data: JTAPData instance containing numpy arrays
+        jtap_data: JTAPMiceData instance containing numpy arrays
         
     Returns:
-        JTAPData instance with all numpy arrays converted to JAX arrays
+        JTAPMiceData instance with all numpy arrays converted to JAX arrays
     """
     def convert_recursive(obj):
         if hasattr(obj, '__array__') and not isinstance(obj, jnp.ndarray):
@@ -117,14 +117,14 @@ class JTAPInference(NamedTuple):
     obs_is_fully_hidden: bool
     stopped_early: bool
 
-class JTAPData(NamedTuple):
+class JTAPMiceData(NamedTuple):
     num_jtap_runs: int
     inference: JTAPInference  # This contains all step data including init
     params: JTAPParams
     step_prop_retvals: Any
     init_prop_retval: Any
     key_seed: int
-    stimulus: JTAPStimulus
+    stimulus: JTAPMiceStimulus
 
-class JTAPDataAllTrials(NamedTuple):
-    runs: Dict[str, JTAPData]
+class JTAPMiceDataAllTrials(NamedTuple):
+    runs: Dict[str, JTAPMiceData]

@@ -5,9 +5,8 @@ from .likelihood import likelihood_model
 
 def get_render_args(mi, x, y):
    return (mi.pix_x, mi.pix_y, mi.diameter,
-                     x, y, mi.masked_barriers, mi.masked_occluders, 
-                     mi.red_sensor, mi.green_sensor, mi.image_discretization)
-
+                     x, y, mi.masked_occluders, mi.image_discretization)
+   
 @gen
 def full_init_model(mi):
    init_mo = init_model(mi) @ "init"

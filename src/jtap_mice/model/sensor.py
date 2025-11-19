@@ -3,37 +3,19 @@ import jax.numpy as jnp
 
 from jtap_mice.utils import ModelOutput
 
-def red_green_sensor_read(mo: ModelOutput):
-    
+def left_right_sensor_read(mo: ModelOutput):
     x = mo.x
     y = mo.y
     diameter = mo.diameter
 
-    red_x, red_y, red_size_x, red_size_y = mo.red_sensor
-    green_x, green_y, green_size_x, green_size_y = mo.green_sensor
-   
-    in_red = jnp.logical_not(
-            jnp.any(
-                jnp.array([
-                    jnp.less_equal(x+diameter, red_x),
-                    jnp.greater_equal(y, red_y + red_size_y),
-                    jnp.greater_equal(x, red_x + red_size_x),
-                    jnp.less_equal(y+diameter, red_y),
-                ])
-            )
-        )
-    
-    in_green = jnp.logical_not(
-            jnp.any(
-                jnp.array([
-                    jnp.less_equal(x+diameter, green_x),
-                    jnp.greater_equal(y, green_y + green_size_y),
-                    jnp.greater_equal(x, green_x + green_size_x),
-                    jnp.less_equal(y+diameter, green_y),
-                ])
-            )
-        )
+    # Check ball hit left or right side (boundary)
+    left_contact = x <= 0
+    right_contact = x >= (mo.scene_dim[0] - diameter)
 
-    return jnp.where(jnp.logical_or(in_green, in_red), jnp.where(in_red, jnp.int8(1), jnp.int8(2)), jnp.int8(0))
+    # if hit left, output 0; if hit right, output 1; else output 2
+    sensor_val = jnp.where(left_contact, jnp.int8(0),
+                  jnp.where(right_contact, jnp.int8(1), jnp.int8(2)))
 
-red_green_sensor_readouts = jax.vmap(red_green_sensor_read)
+    return sensor_val
+
+left_right_sensor_readouts = jax.vmap(left_right_sensor_read)

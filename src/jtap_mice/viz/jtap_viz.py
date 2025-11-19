@@ -19,7 +19,7 @@ from scipy.stats import vonmises
 from tqdm import tqdm
 
 from jtap_mice.utils import discrete_obs_to_rgb, slice_pt
-from jtap_mice.inference import JTAPData
+from jtap_mice.inference import JTAPMiceData
 from jtap_mice.evaluation import compute_weight_component_correlations, get_rg_raw_beliefs
 
 def rerun_jtap_single_run(
@@ -34,7 +34,7 @@ def rerun_jtap_single_run(
     grid_dot_radius = 1.0,
     show_velocity = False  # ADDED: show velocity arrows if True
 ):
-    assert isinstance(JTAP_DATA, JTAPData)
+    assert isinstance(JTAP_DATA, JTAPMiceData)
     
     # Handle multiple runs
     if JTAP_DATA.num_jtap_runs > 1:
@@ -377,7 +377,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
     """
     ###
 
-    assert isinstance(JTAP_data, JTAPData), "JTAP_data must be of type JTAPData"
+    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be of type JTAPMiceData"
     obs_arrays = JTAP_data.stimulus.discrete_obs
     inference_input = JTAP_data.params.inference_input
 

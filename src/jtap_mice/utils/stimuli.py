@@ -9,7 +9,7 @@ class HumanData(NamedTuple):
     human_keypresses: np.ndarray
     human_output: np.ndarray
 
-class JTAPStimulus(NamedTuple):
+class JTAPMiceStimulus(NamedTuple):
     name: str   
     human_data: HumanData
     discrete_obs: np.ndarray
@@ -73,8 +73,8 @@ def load_red_green_stimulus(
     if rgb_only:
         return rgb_frames
     else:
-        # Create JTAPStimulus object
-        stimulus = JTAPStimulus(name = name, discrete_obs = discrete_obs, partially_occluded_bool = partially_occluded_bool, fully_occluded_bool = fully_occluded_bool, ground_truth_positions = ground_truth_positions, num_frames = len(rgb_frames), diameter = diameter, fps = fps, skip_t = skip_t, pixel_density = pixel_density, human_data = human_data, is_occlusion_trial = is_occlusion_trial) # type: ignore
+        # Create JTAPMiceStimulus object
+        stimulus = JTAPMiceStimulus(name = name, discrete_obs = discrete_obs, partially_occluded_bool = partially_occluded_bool, fully_occluded_bool = fully_occluded_bool, ground_truth_positions = ground_truth_positions, num_frames = len(rgb_frames), diameter = diameter, fps = fps, skip_t = skip_t, pixel_density = pixel_density, human_data = human_data, is_occlusion_trial = is_occlusion_trial) # type: ignore
         
         return stimulus
 

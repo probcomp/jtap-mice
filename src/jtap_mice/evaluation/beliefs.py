@@ -2,7 +2,7 @@ import numpy as np
 from scipy.special import logsumexp
 from typing import NamedTuple
 
-from jtap_mice.inference import JTAPData
+from jtap_mice.inference import JTAPMiceData
 
 class JTAP_Beliefs(NamedTuple):
     model_beliefs: np.ndarray
@@ -12,7 +12,7 @@ class JTAP_Beliefs(NamedTuple):
 
 def get_rg_raw_beliefs(JTAP_data, prediction_t_offset):
 
-    assert isinstance(JTAP_data, JTAPData), "JTAP_data must be a JTAPData"
+    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be a JTAPMiceData"
     
     # Get weights and rg data
     weights = JTAP_data.inference.weight_data.final_weights  # shape: (num_jtap_runs, num_timesteps, num_particles) or (num_timesteps, num_particles)
@@ -162,7 +162,7 @@ def jtap_baseline_beliefs(model_beliefs, occlusion_bool, decay_T):
 
 def jtap_compute_beliefs(_jtap_data_, pred_len = None, decay_T = 20, partial_occlusion_counts_as_occlusion = True):
 
-    if isinstance(_jtap_data_, JTAPData):
+    if isinstance(_jtap_data_, JTAPMiceData):
         is_multiple_runs = _jtap_data_.num_jtap_runs > 1
         # max_prediction_steps is always a list, so we need to extract the scalar value
         max_prediction_steps = _jtap_data_.params.max_prediction_steps[0] if isinstance(_jtap_data_.params.max_prediction_steps, (list, np.ndarray)) else _jtap_data_.params.max_prediction_steps
@@ -192,4 +192,4 @@ def jtap_compute_beliefs(_jtap_data_, pred_len = None, decay_T = 20, partial_occ
         jtap_beliefs = JTAP_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_data_.num_jtap_runs)
         return jtap_beliefs
     else:
-        raise ValueError(f"Unsupported type: {type(_jtap_data_)}, supported types are JTAPData")
+        raise ValueError(f"Unsupported type: {type(_jtap_data_)}, supported types are JTAPMiceData")

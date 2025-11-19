@@ -7,7 +7,7 @@ from jtap_mice.utils import slice_pt
 
 @Pytree.dataclass
 class PixelFlipLikelihood(ExactDensity):
-    # HARDCODED TO HAVE 6 POSSIBLE PIXEL VALUES
+    # HARDCODED TO HAVE 3 POSSIBLE PIXEL VALUES (0, 1, 2)
     def sample(self, key, render_args, pixel_corruption_prob, *args, **kwargs):
         rendered_image = render_scene(*render_args)
         
@@ -19,9 +19,7 @@ class PixelFlipLikelihood(ExactDensity):
         
         # For each pixel, create a mask of valid alternatives (all values except the original)
         def sample_alternative_pixel(original_val, rng_key):
-            # Instead of boolean indexing, use jnp.where to select alternatives
-            # This avoids the NonConcreteBooleanIndexError
-            alternatives = jnp.array([0, 1, 2, 3, 4, 5], dtype=jnp.int8)
+            alternatives = jnp.array([0, 1, 2], dtype=jnp.int8)
             # Remove the original value by setting its probability to 0
             probs = jnp.where(alternatives == original_val, 0.0, 1.0)
             # Normalize probabilities
@@ -43,7 +41,6 @@ class PixelFlipLikelihood(ExactDensity):
 
     def logpdf(self, obs_image, render_args, pixel_corruption_prob, *args, **kwargs):
         return jnp.sum(
-                # jnp.where(obs_image == render_scene(*render_args), jnp.log(1 - pixel_corruption_prob), jnp.log(pixel_corruption_prob/5))
                 jnp.where(obs_image == render_scene(*render_args), jnp.log(1 - pixel_corruption_prob), jnp.log(pixel_corruption_prob))
         )
     
@@ -84,7 +81,7 @@ def compute_tile_log_prob(latent_window, pixel_value, log_tile):
 
 def compute_mixed_log_prob(tile_log_prob, pixel_corruption_prob):
     """Mix tile and outlier probabilities using pixel_corruption_prob."""
-    outlier_log_prob = jnp.log(1.0 / 6.0)
+    outlier_log_prob = jnp.log(1.0 / 3.0)
     log_probs_to_mix = jnp.array([
         jnp.log(1.0 - pixel_corruption_prob) + tile_log_prob,
         jnp.log(pixel_corruption_prob) + outlier_log_prob
@@ -159,8 +156,8 @@ def sample_per_pixel(
     tile_size = tile_size_arr.shape[0]
     latent_window = get_latent_window(padded_latent, ij, tile_size)
     
-    # Create probability distribution over possible pixel values (0-5)
-    pixel_values = jnp.array([0, 1, 2, 3, 4, 5], dtype=jnp.int8)
+    # Create probability distribution over possible pixel values (0-2)
+    pixel_values = jnp.array([0, 1, 2], dtype=jnp.int8)
     
     # Compute log probabilities for each possible pixel value
     def compute_log_prob_for_pixel_val(pix_val):
@@ -188,7 +185,7 @@ class GaussianTileLikelihood(ExactDensity):
     For each pixel, the model:
     1. With probability (1-pixel_corruption_prob): samples from a Gaussian tile centered on matching 
        pixels in the rendered latent scene
-    2. With probability pixel_corruption_prob: samples uniformly from all 6 possible pixel values
+    2. With probability pixel_corruption_prob: samples uniformly from all 3 possible pixel values
     
     Temperature parameter image_power_beta tempers the entire likelihood.
     
@@ -246,26 +243,15 @@ class GaussianTileLikelihood(ExactDensity):
 gaussian_tile_likelihood = GaussianTileLikelihood()
 
 @jax.jit
-def render_scene(pix_x, pix_y, diameter, x, y, masked_barriers, masked_occluders, red_sensor, green_sensor, image_discretization):
+def render_scene(pix_x, pix_y, diameter, x, y, masked_occluders, image_discretization):
     # Precompute the grid - note that pix_x corresponds to columns (width) and pix_y to rows (height)
     # Following image convention: first index is rows (y/height), second index is columns (x/width)
     y_vals, x_vals = jnp.meshgrid(pix_y, pix_x, indexing='ij')
-    max_barriers = masked_barriers.flag.shape[0]
     max_occluders = masked_occluders.flag.shape[0]
 
     # Initialize the image with shape (height, width) = (pix_y.shape[0], pix_x.shape[0])
     image = jnp.zeros((pix_y.shape[0], pix_x.shape[0]), dtype=jnp.int8)
 
-    # Render green and red sensors
-    sensor_x, sensor_y, sensor_size_x, sensor_size_y = green_sensor
-    image = jnp.where((x_vals >= sensor_x) & (y_vals >= sensor_y) & (x_vals < sensor_x + sensor_size_x) & (y_vals < sensor_y + sensor_size_y), jnp.int8(5), image)
-
-    sensor_x, sensor_y, sensor_size_x, sensor_size_y = red_sensor
-    image = jnp.where((x_vals >= sensor_x) & (y_vals >= sensor_y) & (x_vals < sensor_x + sensor_size_x) & (y_vals < sensor_y + sensor_size_y), jnp.int8(4), image)
-
-    for i in range(max_barriers):
-        barrier_x, barrier_y, barrier_size_x, barrier_size_y = slice_pt(masked_barriers.value,i)
-        image = jnp.where(masked_barriers.flag[i] & (x_vals >= barrier_x) & (y_vals >= barrier_y) & (x_vals < barrier_x + barrier_size_x) & (y_vals < barrier_y + barrier_size_y), jnp.int8(3), image)
     # Render the target with center snapped to closest pixel coordinates
     r = diameter / 2
     # Calculate center coordinates by adding radius to position
@@ -282,6 +268,7 @@ def render_scene(pix_x, pix_y, diameter, x, y, masked_barriers, masked_occluders
     
     image = jnp.where((distance_squared) < (r_squared), jnp.int8(2), image)
 
+    # Render occluders as pixel value 1
     for i in range(max_occluders):
         occluder_x, occluder_y, occluder_size_x, occluder_size_y = slice_pt(masked_occluders.value,i)
         image = jnp.where(masked_occluders.flag[i] & (x_vals >= occluder_x) & (y_vals >= occluder_y) & (x_vals < occluder_x + occluder_size_x) & (y_vals < occluder_y + occluder_size_y), jnp.int8(1), image)

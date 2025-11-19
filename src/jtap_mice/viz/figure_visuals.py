@@ -10,14 +10,14 @@ from scipy.stats import pearsonr
 import seaborn as sns
 from jax.scipy.special import logsumexp
 from jtap_mice.evaluation import get_rg_raw_beliefs, JTAP_Metrics, CombinedJTAP_Metrics, DecisionMetrics, CombinedDecisionMetrics
-from jtap_mice.inference import JTAPData
+from jtap_mice.inference import JTAPMiceData
 from jtap_mice.utils import discrete_obs_to_rgb, d2r, r2d
 
 def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, video_offset=(0, 0), viz_key=jax.random.PRNGKey(0), 
                   min_dot_alpha=0.2, min_line_alpha=0.04,
                   ax_num=None, timeframe=None, high_res_multiplier=5, diameter=1.0):
 
-    assert isinstance(JTAP_data, JTAPData), "JTAP_data must be of type JTAPData"
+    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be of type JTAPMiceData"
 
     inference_input = JTAP_data.params.inference_input
 

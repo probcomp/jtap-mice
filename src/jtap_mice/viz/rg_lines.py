@@ -1,5 +1,5 @@
 from jtap_mice.evaluation import JTAP_Beliefs, JTAP_Decisions, JTAP_Metrics
-from jtap_mice.utils import JTAPStimulus
+from jtap_mice.utils import JTAPMiceStimulus
 from jtap_mice.viz.figure_visuals import draw_stimulus_image
 from matplotlib.gridspec import GridSpec
 import numpy as np
@@ -50,7 +50,7 @@ def jtap_plot_rg_lines(
         raise ValueError("plot_stat must be 'mean' or 'median'.")
 
     assert isinstance(rg_values, JTAP_Beliefs) or isinstance(rg_values, JTAP_Decisions), "rg_values must be a JTAP_Beliefs or JTAP_Decisions"
-    assert isinstance(stimulus, JTAPStimulus) if stimulus is not None else True, "stimulus must be a JTAPStimulus"
+    assert isinstance(stimulus, JTAPMiceStimulus) if stimulus is not None else True, "stimulus must be a JTAPMiceStimulus"
     assert isinstance(jtap_metrics, JTAP_Metrics) if jtap_metrics is not None else True, "jtap_metrics must be a JTAP_Metrics"
     
     # Validate include_stimulus

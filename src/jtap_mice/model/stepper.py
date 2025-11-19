@@ -54,9 +54,8 @@ def stepper_model(mo, mi, inference_mode_bool):
     return ModelOutput(
         diameter=diameter, x=new_x, y=new_y, speed=new_speed, direction=new_direction, 
         masked_occluders=mo.masked_occluders, 
-        masked_barriers=mo.masked_barriers, is_target_hidden=is_target_hidden, 
+        is_target_hidden=is_target_hidden, 
         is_target_partially_hidden=is_target_partially_hidden, is_target_visible=is_target_visible, 
-        red_sensor=mo.red_sensor, green_sensor=mo.green_sensor, 
         collision_branch=collision_branch, last_collision_data=last_collision_data, 
         edgemap=mo.edgemap, cornermap=mo.cornermap, T=mo.T + jnp.int32(1),
         stopped_early=stopped_early

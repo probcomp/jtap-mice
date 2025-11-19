@@ -11,7 +11,7 @@ from .data_driven import data_driven_size_and_position
 from .init_proposal import init_proposal, init_choicemap_translator
 from .step_proposal import step_proposal, step_choicemap_translator
 from .grid_inference import grid_proposer, GridData, grid_likelihood_evaluator, make_position_grid, find_valid_positions_bool, adaptive_grid_size
-from .jtap_types import JTAPData, JTAPParams, JTAPInference, JTAPDataAllTrials, PredictionData, TrackingData, WeightData, jtap_data_to_numpy
+from .jtap_types import JTAPMiceData, JTAPParams, JTAPInference, JTAPMiceDataAllTrials, PredictionData, TrackingData, WeightData, jtap_data_to_numpy
 from .inference_utils import pad_obs_with_last_frame
 
 from jtap_mice.model import full_init_model, full_step_model, stepper_model, red_green_sensor_readouts, stepper_model_no_obs
@@ -330,7 +330,7 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         inference_input=mi
     )
     
-    final_JTAP_data = JTAPData(
+    final_JTAP_data = JTAPMiceData(
         num_jtap_runs=None, # set outside jitted function
         inference=all_JTAP_step_data,
         params=jtap_params,
