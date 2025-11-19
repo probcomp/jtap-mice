@@ -31,7 +31,6 @@ class ChexModelInput:
     diameter: float = None
     scene_dim: Tuple[int, int] = None
     num_x_grid_arr : jnp.ndarray = None
-    num_y_grid_arr : jnp.ndarray = None
     pix_x: jnp.ndarray = None
     pix_y: jnp.ndarray = None
     tile_size_arr: jnp.ndarray = None
@@ -49,7 +48,6 @@ class ChexModelInput:
     def prepare_hyperparameters(self):
         # NOTE: Diameter is a constant value of 1.0 for now
         self.update("num_x_grid_arr", jnp.zeros(self.num_x_grid))
-        self.update("num_y_grid_arr", jnp.zeros(self.num_y_grid))
         self.update("tile_size_arr", jnp.zeros(self.tile_size))
 
     def update(self, attr, value):

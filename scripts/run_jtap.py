@@ -145,14 +145,14 @@ def create_model_input(model_hyperparams: Dict) -> ChexModelInput:
     )
 
 def create_compressed_results(jtap_results: JTAP_Results) -> JTAP_Results:
-    from jtap_mice.inference.jtap_types import WeightData, PredictionData, JTAPInference
+    from jtap_mice.inference.jtap_types import WeightData, PredictionData, JTAPMiceInference
 
     minimal_weight_data = WeightData(
         prop_weights=None,
         grid_weights=None,
         incremental_weights=None,
         prev_weights=None,
-        final_weights=jtap_results.jtap_data.inference.weight_data.final_weights
+        final_weights=jtap_results.jtap_mice_data.inference.weight_data.final_weights
     )
 
     minimal_prediction_data = PredictionData(
@@ -161,35 +161,35 @@ def create_compressed_results(jtap_results: JTAP_Results) -> JTAP_Results:
         speed=None,
         direction=None,
         collision_branch=None,
-        rg=jtap_results.jtap_data.inference.prediction.rg
+        rg=jtap_results.jtap_mice_data.inference.prediction.rg
     )
 
-    minimal_inference = JTAPInference(
+    minimal_inference = JTAPMiceInference(
         tracking=None,
         prediction=minimal_prediction_data,
         weight_data=minimal_weight_data,
         grid_data=None,
-        t=jtap_results.jtap_data.inference.t,
-        resampled=jtap_results.jtap_data.inference.resampled,
-        ESS=jtap_results.jtap_data.inference.ESS,
-        is_target_hidden=jtap_results.jtap_data.inference.is_target_hidden,
-        is_target_partially_hidden=jtap_results.jtap_data.inference.is_target_partially_hidden,
-        obs_is_fully_hidden=jtap_results.jtap_data.inference.obs_is_fully_hidden,
-        stopped_early=jtap_results.jtap_data.inference.stopped_early
+        t=jtap_results.jtap_mice_data.inference.t,
+        resampled=jtap_results.jtap_mice_data.inference.resampled,
+        ESS=jtap_results.jtap_mice_data.inference.ESS,
+        is_target_hidden=jtap_results.jtap_mice_data.inference.is_target_hidden,
+        is_target_partially_hidden=jtap_results.jtap_mice_data.inference.is_target_partially_hidden,
+        obs_is_fully_hidden=jtap_results.jtap_mice_data.inference.obs_is_fully_hidden,
+        stopped_early=jtap_results.jtap_mice_data.inference.stopped_early
     )
 
-    compressed_jtap_data = JTAPMiceData(
-        num_jtap_runs=jtap_results.jtap_data.num_jtap_runs,
+    compressed_jtap_mice_data = JTAPMiceData(
+        num_jtap_runs=jtap_results.jtap_mice_data.num_jtap_runs,
         inference=minimal_inference,
-        params=jtap_results.jtap_data.params,
+        params=jtap_results.jtap_mice_data.params,
         step_prop_retvals=None,
         init_prop_retval=None,
-        key_seed=jtap_results.jtap_data.key_seed,
-        stimulus=jtap_results.jtap_data.stimulus
+        key_seed=jtap_results.jtap_mice_data.key_seed,
+        stimulus=jtap_results.jtap_mice_data.stimulus
     )
 
     return JTAP_Results(
-        jtap_data=compressed_jtap_data,
+        jtap_mice_data=compressed_jtap_mice_data,
         JTAPMice_Beliefs=jtap_results.JTAPMice_Beliefs,
         jtap_decisions=jtap_results.jtap_decisions,
         jtap_metrics=jtap_results.jtap_metrics
@@ -346,14 +346,14 @@ def run_single_trial(
     pretty_info(f"Running JTAP inference: {num_jtap_runs} runs × {num_particles} particles/run ...")
     start_time = time.time()
     max_inference_steps = jtap_stimulus.num_frames
-    jtap_data, _ = run_parallel_jtap(
+    jtap_mice_data, _ = run_parallel_jtap(
         num_jtap_runs, smc_key_seed, model_input, ess_proportion, jtap_stimulus, num_particles, max_inference_steps=max_inference_steps
     )
     end_time = time.time()
     pretty_success(f"JTAP inference completed in {end_time - start_time:.2f} seconds (includes possible JAX JIT compilation)")
 
     pretty_info("Computing beliefs...")
-    JTAPMice_Beliefs = jtap_compute_beliefs(jtap_data)
+    JTAPMice_Beliefs = jtap_compute_beliefs(jtap_mice_data)
 
     pretty_info("Computing decisions...")
     jtap_decisions, jtap_decision_model_params = jtap_compute_decisions(
@@ -370,7 +370,7 @@ def run_single_trial(
         jtap_metrics = None
 
     jtap_results = JTAP_Results(
-        jtap_data=jtap_data,
+        jtap_mice_data=jtap_mice_data,
         JTAPMice_Beliefs=JTAPMice_Beliefs,
         jtap_decisions=jtap_decisions,
         jtap_metrics=jtap_metrics,
@@ -518,12 +518,12 @@ def run_batch_trials(
         try:
             model_input.prepare_scene_geometry(jtap_stimulus)
             start_time = time.time()
-            jtap_data, _ = run_parallel_jtap(
+            jtap_mice_data, _ = run_parallel_jtap(
                 num_jtap_runs, current_smc_key_seed, model_input, ess_proportion, jtap_stimulus, num_particles, max_inference_steps=max_inference_steps
             )
             end_time = time.time()
 
-            JTAPMice_Beliefs = jtap_compute_beliefs(jtap_data)
+            JTAPMice_Beliefs = jtap_compute_beliefs(jtap_mice_data)
             jtap_decisions, _ = jtap_compute_decisions(
                 JTAPMice_Beliefs, decision_hyperparams, remove_keypress_to_save_memory=True, decision_model_version=decision_model_version
             )
@@ -535,7 +535,7 @@ def run_batch_trials(
                 jtap_metrics = None
 
             jtap_results = JTAP_Results(
-                jtap_data=jtap_data,
+                jtap_mice_data=jtap_mice_data,
                 JTAPMice_Beliefs=JTAPMice_Beliefs,
                 jtap_decisions=jtap_decisions,
                 jtap_metrics=jtap_metrics,
@@ -680,7 +680,7 @@ def main():
     parser.add_argument("--skip_t", type=int, default=4, help="Skip frames parameter (default: 4)")
     parser.add_argument("--smc_key_seed", type=int, default=None, help="Random seed for SMC (default: random)")
     parser.add_argument("--batch_mode", action="store_true", help="Enable batch processing mode (required when using --stimulus_folder)")
-    parser.add_argument("--save_compressed", action="store_true", help="Save compressed data (removes keypress data and compresses JTAP_DATA to minimum needed for belief recomputation)")
+    parser.add_argument("--save_compressed", action="store_true", help="Save compressed data (removes keypress data and compresses JTAPMICE_DATA to minimum needed for belief recomputation)")
 
     args = parser.parse_args()
 

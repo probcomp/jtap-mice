@@ -20,10 +20,10 @@ from tqdm import tqdm
 
 from jtap_mice.utils import discrete_obs_to_rgb, slice_pt
 from jtap_mice.inference import JTAPMiceData
-from jtap_mice.evaluation import compute_weight_component_correlations, get_rg_raw_beliefs
+from jtap_mice.evaluation import compute_weight_component_correlations, get_lr_raw_beliefs
 
 def rerun_jtap_single_run(
-    JTAP_DATA,
+    JTAPMICE_DATA,
     rgb_video_highres = None,
     stimulus_name = 'jtap_single_runv0',
     override_prediction_length = None,
@@ -34,16 +34,16 @@ def rerun_jtap_single_run(
     grid_dot_radius = 1.0,
     show_velocity = False  # ADDED: show velocity arrows if True
 ):
-    assert isinstance(JTAP_DATA, JTAPMiceData)
+    assert isinstance(JTAPMICE_DATA, JTAPMiceData)
     
     # Handle multiple runs
-    if JTAP_DATA.num_jtap_runs > 1:
+    if JTAPMICE_DATA.num_jtap_runs > 1:
         if jtap_run_idx is None:
-            print(f"Multiple JTAP runs detected ({JTAP_DATA.num_jtap_runs} runs). No index provided, visualizing index 0 (first run).")
+            print(f"Multiple JTAP runs detected ({JTAPMICE_DATA.num_jtap_runs} runs). No index provided, visualizing index 0 (first run).")
             jtap_run_idx = 0
         else:
-            if jtap_run_idx >= JTAP_DATA.num_jtap_runs:
-                raise ValueError(f"jtap_run_idx {jtap_run_idx} is out of range. Available runs: 0 to {JTAP_DATA.num_jtap_runs - 1}")
+            if jtap_run_idx >= JTAPMICE_DATA.num_jtap_runs:
+                raise ValueError(f"jtap_run_idx {jtap_run_idx} is out of range. Available runs: 0 to {JTAPMICE_DATA.num_jtap_runs - 1}")
     else:
         jtap_run_idx = 0
 
@@ -51,7 +51,7 @@ def rerun_jtap_single_run(
     from scipy.special import logsumexp
 
     # extract discrete obs
-    discrete_obs = JTAP_DATA.stimulus.discrete_obs
+    discrete_obs = JTAPMICE_DATA.stimulus.discrete_obs
     rgb_video = discrete_obs_to_rgb(discrete_obs)
 
     ###########################
@@ -61,34 +61,34 @@ def rerun_jtap_single_run(
     # Helper function to get indexed data
     def get_run_data(data, run_idx=None):
         """Extract data for a specific run if multiple runs exist"""
-        if JTAP_DATA.num_jtap_runs > 1:
+        if JTAPMICE_DATA.num_jtap_runs > 1:
             return slice_pt(data, run_idx)
         return data
 
     # Step 0: Get basic params
     image_height = rgb_video.shape[1]
     image_width = rgb_video.shape[2]
-    inference_input = JTAP_DATA.params.inference_input
+    inference_input = JTAPMICE_DATA.params.inference_input
     pixel_density = round(1/get_run_data(inference_input.image_discretization, jtap_run_idx))
     diameter = get_run_data(inference_input.diameter, jtap_run_idx)
     max_speed = get_run_data(inference_input.max_speed, jtap_run_idx)
-    ESS_over_time = get_run_data(JTAP_DATA.inference.ESS, jtap_run_idx)
-    ESS_threshold = get_run_data(JTAP_DATA.params.ESS_threshold, jtap_run_idx)
-    num_particles = get_run_data(JTAP_DATA.params.num_particles, jtap_run_idx)
-    resampled_over_time = get_run_data(JTAP_DATA.inference.resampled, jtap_run_idx)
-    simulate_every = get_run_data(JTAP_DATA.params.simulate_every, jtap_run_idx)
+    ESS_over_time = get_run_data(JTAPMICE_DATA.inference.ESS, jtap_run_idx)
+    ESS_threshold = get_run_data(JTAPMICE_DATA.params.ESS_threshold, jtap_run_idx)
+    num_particles = get_run_data(JTAPMICE_DATA.params.num_particles, jtap_run_idx)
+    resampled_over_time = get_run_data(JTAPMICE_DATA.inference.resampled, jtap_run_idx)
+    simulate_every = get_run_data(JTAPMICE_DATA.params.simulate_every, jtap_run_idx)
 
     # Step 1: Compute inference and prediction lengths
-    num_inference_steps = get_run_data(JTAP_DATA.params.max_inference_steps, jtap_run_idx)
-    num_prediction_steps = get_run_data(JTAP_DATA.params.max_prediction_steps, jtap_run_idx)
+    num_inference_steps = get_run_data(JTAPMICE_DATA.params.max_inference_steps, jtap_run_idx)
+    num_prediction_steps = get_run_data(JTAPMICE_DATA.params.max_prediction_steps, jtap_run_idx)
     num_prediction_steps = num_prediction_steps if override_prediction_length is None else override_prediction_length
 
     # Step 2: Extract inference/tracking data
-    weights = get_run_data(JTAP_DATA.inference.weight_data.final_weights, jtap_run_idx)  # T by N_PARTICLES
-    tracking_x = get_run_data(JTAP_DATA.inference.tracking.x, jtap_run_idx)  # T by N_PARTICLES
-    tracking_y = get_run_data(JTAP_DATA.inference.tracking.y, jtap_run_idx)  # T by N_PARTICLES
-    tracking_direction = get_run_data(JTAP_DATA.inference.tracking.direction, jtap_run_idx)  # T by N_PARTICLES
-    tracking_speed = get_run_data(JTAP_DATA.inference.tracking.speed, jtap_run_idx)  # T by N_PARTICLES
+    weights = get_run_data(JTAPMICE_DATA.inference.weight_data.final_weights, jtap_run_idx)  # T by N_PARTICLES
+    tracking_x = get_run_data(JTAPMICE_DATA.inference.tracking.x, jtap_run_idx)  # T by N_PARTICLES
+    tracking_y = get_run_data(JTAPMICE_DATA.inference.tracking.y, jtap_run_idx)  # T by N_PARTICLES
+    tracking_direction = get_run_data(JTAPMICE_DATA.inference.tracking.direction, jtap_run_idx)  # T by N_PARTICLES
+    tracking_speed = get_run_data(JTAPMICE_DATA.inference.tracking.speed, jtap_run_idx)  # T by N_PARTICLES
 
     # Step 2.5: Create prediction initialization arrays that freeze values every simulate_every timesteps
     # This mimics how predictions are initialized from fixed reference states
@@ -97,8 +97,8 @@ def rerun_jtap_single_run(
     pred_init_y = tracking_y[block_indices]  # T by N_PARTICLES
 
     # Step 3: Extract prediction data, and concat with tracking data
-    prediction_x = get_run_data(JTAP_DATA.inference.prediction.x, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
-    prediction_y = get_run_data(JTAP_DATA.inference.prediction.y, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
+    prediction_x = get_run_data(JTAPMICE_DATA.inference.prediction.x, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
+    prediction_y = get_run_data(JTAPMICE_DATA.inference.prediction.y, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
     prediction_x = jnp.concatenate([pred_init_x[:,None,:], prediction_x], axis = 1)  # T by num_prediction_steps+1 by N_PARTICLES
     prediction_y = jnp.concatenate([pred_init_y[:,None,:], prediction_y], axis = 1)  # T by num_prediction_steps+1 by N_PARTICLES
 
@@ -132,8 +132,8 @@ def rerun_jtap_single_run(
     # NOTE: that the N_particles dimension is lifted while the num predictions step dimension is brought down
     prediction_uv = np.stack([prediction_u, prediction_v], axis = 3).swapaxes(1, 2) # NOTE: T by N_PARTICLES by num_prediction_steps+1 by 2
 
-    # Step 9: Compute rg expectation. Output is T by 3 (green, red, uncertain)
-    rg_raw_beliefs = get_run_data(get_rg_raw_beliefs(JTAP_DATA, num_prediction_steps), jtap_run_idx)
+    # Step 9: Compute lr expectation. Output is T by 3 (left, right, uncertain)
+    lr_raw_beliefs = get_run_data(get_lr_raw_beliefs(JTAPMICE_DATA, num_prediction_steps), jtap_run_idx)
 
     
     # Step 10: Compute speed and direction samples
@@ -173,16 +173,16 @@ def rerun_jtap_single_run(
     direction_bin_centers = (direction_bin_edges[:-1] + direction_bin_edges[1:]) / 2
 
     # Step 11: Compute weight component correlations
-    weight_component_correlations = compute_weight_component_correlations(JTAP_DATA, run_idx=jtap_run_idx)
+    weight_component_correlations = compute_weight_component_correlations(JTAPMICE_DATA, run_idx=jtap_run_idx)
 
     ################################################################################
     # Process grid data for rendering if requested
     ################################################################################
     grid_positions_per_frame = None
-    if render_grid and hasattr(JTAP_DATA.inference, "grid_data"):
+    if render_grid and hasattr(JTAPMICE_DATA.inference, "grid_data"):
         # Get the grid for the first particle (they are the same for every particle)
-        grid_x = get_run_data(JTAP_DATA.inference.grid_data.x_grid, jtap_run_idx)  # shape: [T, num_grid_cells]
-        grid_y = get_run_data(JTAP_DATA.inference.grid_data.y_grid, jtap_run_idx)
+        grid_x = get_run_data(JTAPMICE_DATA.inference.grid_data.x_grid, jtap_run_idx)  # shape: [T, num_grid_cells]
+        grid_y = get_run_data(JTAPMICE_DATA.inference.grid_data.y_grid, jtap_run_idx)
         if grid_x is not None and grid_y is not None:
             # Prepare: for each timestep, select valid grid points inside scene bounds, transform for rerun rendering.
             grid_positions_per_frame = []
@@ -240,10 +240,10 @@ def rerun_jtap_single_run(
 
     orange_color = [255, 140, 0, 255]  # velocity arrow color
 
-    # Set up line series styling for RG beliefs (static, applies to all timelines)
-    rr.log("rg_beliefs/red", rr.SeriesLines(colors=[255, 0, 0, 255], names="Red", widths=3), static=True)
-    rr.log("rg_beliefs/green", rr.SeriesLines(colors=[0, 255, 0, 255], names="Green", widths=3), static=True)
-    rr.log("rg_beliefs/uncertain", rr.SeriesLines(colors=[0, 0, 255, 255], names="Uncertain", widths=3), static=True)
+    # Set up line series styling for LR beliefs (static, applies to all timelines)
+    rr.log("lr_beliefs/left", rr.SeriesLines(colors=[255, 0, 0, 255], names="Left", widths=3), static=True)
+    rr.log("lr_beliefs/right", rr.SeriesLines(colors=[0, 255, 0, 255], names="Right", widths=3), static=True)
+    rr.log("lr_beliefs/uncertain", rr.SeriesLines(colors=[0, 0, 255, 255], names="Uncertain", widths=3), static=True)
 
     for timestep in range(len(rgb_video)):
         rr.set_time(timeline = "frame", sequence = timestep)
@@ -336,9 +336,9 @@ def rerun_jtap_single_run(
         )
 
         # Log RG beliefs as line series over time
-        rr.log("rg_beliefs/red", rr.Scalars(rg_raw_beliefs[timestep, 1]))  # Red is index 1
-        rr.log("rg_beliefs/green", rr.Scalars(rg_raw_beliefs[timestep, 0]))  # Green is index 0
-        rr.log("rg_beliefs/uncertain", rr.Scalars(rg_raw_beliefs[timestep, 2]))  # Uncertain is index 2
+        rr.log("lr_beliefs/left", rr.Scalars(lr_raw_beliefs[timestep, 1]))  # Left is index 1
+        rr.log("lr_beliefs/right", rr.Scalars(lr_raw_beliefs[timestep, 0]))  # Right is index 0
+        rr.log("lr_beliefs/uncertain", rr.Scalars(lr_raw_beliefs[timestep, 2]))  # Uncertain is index 2
         
         # Format ESS information
         ess_text = f"__{ESS_over_time[timestep]:.2f}__" if ESS_over_time[timestep] <= ESS_threshold else f"{ESS_over_time[timestep]:.2f}"
@@ -367,7 +367,7 @@ def rerun_jtap_single_run(
         info_text = f"> ESS: {ess_text} / {num_particles}{resampled_text}\n\n> Weight Correlations: {corr_text}"
         rr.log("info/ESS", rr.TextDocument(info_text, media_type=rr.MediaType.MARKDOWN))
 
-def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), prediction_t_offset = None, video_offset = (0,0),
+def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), prediction_t_offset = None, video_offset = (0,0),
     fps = 10, skip_t = 1, show_latents = True, min_dot_alpha = 0.2, min_line_alpha = 0.04, show_resampled_text = True, num_t_steps = None, diameter = 1.0):
     ###
     """
@@ -377,9 +377,9 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
     """
     ###
 
-    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be of type JTAPMiceData"
-    obs_arrays = JTAP_data.stimulus.discrete_obs
-    inference_input = JTAP_data.params.inference_input
+    assert isinstance(JTAPMice_data, JTAPMiceData), "JTAPMice_data must be of type JTAPMiceData"
+    obs_arrays = JTAPMice_data.stimulus.discrete_obs
+    inference_input = JTAPMice_data.params.inference_input
 
     def generate_samples(key, n_samples, support, logprobs):
         keys = jax.random.split(key, n_samples)
@@ -389,7 +389,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
     generate_samples_vmap = jax.vmap(generate_samples, in_axes = (0,None,0,0))
 
     if prediction_t_offset is None:
-        prediction_t_offset = JTAP_data.params.max_prediction_steps
+        prediction_t_offset = JTAPMice_data.params.max_prediction_steps
 
     max_line_alpha = 1 # should always be 1, makes no sense to have alpha > 1
     min_line_alpha = min_line_alpha
@@ -398,14 +398,14 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
     min_dot_alpha = min_dot_alpha
 
     if num_t_steps is None:
-        num_inference_steps = JTAP_data.inference.weight_data.final_weights.shape[0]
+        num_inference_steps = JTAPMice_data.inference.weight_data.final_weights.shape[0]
     else:
         num_inference_steps = num_t_steps
-    num_prediction_steps = JTAP_data.params.max_prediction_steps
+    num_prediction_steps = JTAPMice_data.params.max_prediction_steps
     max_inference_T = num_inference_steps - 1
     maxt = obs_arrays.shape[0]
-    n_particles = JTAP_data.params.num_particles
-    normalized_weights_ = jnp.exp(JTAP_data.inference.weight_data.final_weights - logsumexp(JTAP_data.inference.weight_data.final_weights, axis = 1, keepdims = True)) # T by N_PARTICLES
+    n_particles = JTAPMice_data.params.num_particles
+    normalized_weights_ = jnp.exp(JTAPMice_data.inference.weight_data.final_weights - logsumexp(JTAPMice_data.inference.weight_data.final_weights, axis = 1, keepdims = True)) # T by N_PARTICLES
 
     equal_prob_value = 1/n_particles
 
@@ -431,10 +431,10 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
     max_inference_T_for_video = max_inference_T - video_offset[1]
 
 
-    inf_x_points = JTAP_data.inference.tracking.x # T by N_PARTICLES
-    inf_y_points = JTAP_data.inference.tracking.y # T by N_PARTICLES
-    pred_x_lines = jnp.concatenate([JTAP_data.inference.tracking.x[:,None,:], JTAP_data.inference.prediction.x], axis = 1) # T by T_pred+1 by N_PARTICLES
-    pred_y_lines = jnp.concatenate([JTAP_data.inference.tracking.y[:,None,:], JTAP_data.inference.prediction.y], axis = 1) # T by T_pred+1 by N_PARTICLES
+    inf_x_points = JTAPMice_data.inference.tracking.x # T by N_PARTICLES
+    inf_y_points = JTAPMice_data.inference.tracking.y # T by N_PARTICLES
+    pred_x_lines = jnp.concatenate([JTAPMice_data.inference.tracking.x[:,None,:], JTAPMice_data.inference.prediction.x], axis = 1) # T by T_pred+1 by N_PARTICLES
+    pred_y_lines = jnp.concatenate([JTAPMice_data.inference.tracking.y[:,None,:], JTAPMice_data.inference.prediction.y], axis = 1) # T by T_pred+1 by N_PARTICLES
     inf_dots_alpha_over_time = min_dot_alpha + normalized_weights * (max_dot_alpha - min_dot_alpha)
     pred_alphas_over_time = min_line_alpha + normalized_weights * (max_line_alpha - min_line_alpha)
     sizes_over_time = jnp.full((num_inference_steps, n_particles), diameter) # T by N_PARTICLES
@@ -480,7 +480,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
 
     # WORKS WELL NOW
      
-    scale_multiplier = 1 / JTAP_data.params.inference_input.image_discretization
+    scale_multiplier = 1 / JTAPMice_data.params.inference_input.image_discretization
     image_height = obs_arrays.shape[1] # 2nd dimension is height
     x_to_pix_x = jax.jit(lambda x, s : (x + 0.5*s) * scale_multiplier)
     y_to_pix_y = jax.jit(lambda y, s : image_height - 1 - (y + 0.5*s) * scale_multiplier)
@@ -506,19 +506,19 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
 
     timer_text = fig.text(0.1, 0.95, "Timestep: " + r'$\bf{0}$', ha='left', color="k", fontsize=15)
     if show_resampled_text:
-        resampled_text = fig.text(0.4, 0.95, f"Resampled: {JTAP_data.inference.resampled[0]}", ha='left', color="b", fontsize=17)
+        resampled_text = fig.text(0.4, 0.95, f"Resampled: {JTAPMice_data.inference.resampled[0]}", ha='left', color="b", fontsize=17)
 
     particle_collapsed_text = fig.text(0.7, 0.95, f"Particle Collapsed: {particle_collapsed[0]}", ha='left', color="r", fontsize=15)
 
     # AX2
-    rg_data = get_rg_raw_beliefs(JTAP_data, prediction_t_offset)
-    bars = ax2.bar(range(3), rg_data[0], color = ['green', 'red', 'blue'])
+    lr_data = get_lr_raw_beliefs(JTAPMice_data, prediction_t_offset)
+    bars = ax2.bar(range(3), lr_data[0], color = ['green', 'red', 'blue'])
 
     # Set up the axis limits
     # Set title and x-ticks
-    ax2.set_title('Red or Green: Which will it hit next?', fontsize=10)
+    ax2.set_title('Left or Right: Which will it hit next?', fontsize=10)
     ax2.set_xticks(range(3))
-    ax2.set_xticklabels(['Green', 'Red', 'Uncertain'])
+    ax2.set_xticklabels(['Left', 'Right', 'Uncertain'])
     ax2.set_ylim(0, 1)
 
     if show_latents:
@@ -528,7 +528,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
         max_count = 10
         viz_key, dir_key = jax.random.split(viz_key, 2)
         dir_keys = jax.random.split(dir_key, num_inference_steps)
-        sampled_dir = generate_samples_vmap(dir_keys, 10000, JTAP_data.inference.tracking.direction[:num_inference_steps], JTAP_data.inference.weight_data.final_weights[:num_inference_steps])
+        sampled_dir = generate_samples_vmap(dir_keys, 10000, JTAPMice_data.inference.tracking.direction[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
         all_counts_dir = []
         # NOTE: IN THIS VIZ, STEP DIR IS TAKEN  a step before current step
         for i in range(max_inference_T_for_video + 1):
@@ -555,7 +555,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
         max_count = 10
         viz_key, speed_key = jax.random.split(viz_key, 2)
         speed_keys = jax.random.split(speed_key, num_inference_steps)
-        sampled_speed = generate_samples_vmap(speed_keys, 10000, JTAP_data.inference.tracking.speed[:num_inference_steps], JTAP_data.inference.weight_data.final_weights[:num_inference_steps])
+        sampled_speed = generate_samples_vmap(speed_keys, 10000, JTAPMice_data.inference.tracking.speed[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
         all_counts_speed = []
         # NOTE: IN THIS VIZ, STEP SPEED IS TAKEN  a step before current step
         for i in range(max_inference_T_for_video + 1):
@@ -587,11 +587,11 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
                     resampled_text.set_color("r")
                     resampled_text.set_text("Resampled: Disabled")
                 else:
-                    if JTAP_data.inference.resampled[idx]:
+                    if JTAPMice_data.inference.resampled[idx]:
                         resampled_text.set_color("g")
                     else:
                         resampled_text.set_color("b")
-                    resampled_text.set_text(f"Resampled: {JTAP_data.inference.resampled[idx]}")
+                    resampled_text.set_text(f"Resampled: {JTAPMice_data.inference.resampled[idx]}")
             print(f"rendering inference step {idx}")
             filtering_posterior_dot_probs.set_offsets(np.c_[
                 x_to_pix_x_vmap(inf_x_points[idx], 
@@ -606,7 +606,7 @@ def red_green_viz_notebook(JTAP_data, viz_key = jax.random.PRNGKey(0), predictio
                     y_to_pix_y(pred_y_lines[idx,:,n], sizes_over_time[idx,n]))
                 p_lines[n].set_alpha(round(float(pred_alphas_over_time[idx,n]),2))
 
-            for bar, height in zip(bars, rg_data[idx]):
+            for bar, height in zip(bars, lr_data[idx]):
                 bar.set_height(height)
             if show_latents:
                 for bar, height in zip(dir_bars, all_counts_dir[idx]):

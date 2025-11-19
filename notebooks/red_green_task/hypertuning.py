@@ -124,8 +124,8 @@ def run_all_cogsci_trials(num_jtap_runs, Model_Input, num_particles, smc_key_see
         jtap_stimulus = jtap_stimuli[COGSCI_TRIAL]
         Model_Input.prepare_scene_geometry(jtap_stimulus)
         smc_key_seed += 1
-        JTAP_DATA, _ = run_parallel_jtap(num_jtap_runs, smc_key_seed, Model_Input, ESS_proportion, jtap_stimulus, num_particles, max_inference_steps = max_inference_steps)
-        JTAPMice_Beliefs = jtap_compute_beliefs(JTAP_DATA)
+        JTAPMICE_DATA, _ = run_parallel_jtap(num_jtap_runs, smc_key_seed, Model_Input, ESS_proportion, jtap_stimulus, num_particles, max_inference_steps = max_inference_steps)
+        JTAPMice_Beliefs = jtap_compute_beliefs(JTAPMICE_DATA)
 
         for decision_idx in range(num_decision_runs_per_tuning_run):
             press_thresh_hyperparams = all_experiment_results[decision_idx]['press_thresh_hyperparams']
@@ -145,7 +145,7 @@ def run_all_cogsci_trials(num_jtap_runs, Model_Input, num_particles, smc_key_see
 
             jtap_decisions, jtap_decision_model_params = jtap_compute_decisions(JTAPMice_Beliefs, jtap_decision_model_hyperparams, remove_keypress_to_save_memory = True, decision_model_version = DECISION_MODEL_VERSION)
             jtap_metrics = jtap_compute_decision_metrics(jtap_decisions, jtap_stimulus, partial_occlusion_in_targeted_analysis=True, ignore_uncertain_line=True)
-            jtap_results = JTAP_Results(jtap_data = None, JTAPMice_Beliefs = None, jtap_decisions = jtap_decisions, jtap_metrics = jtap_metrics)
+            jtap_results = JTAP_Results(jtap_mice_data = None, JTAPMice_Beliefs = None, jtap_decisions = jtap_decisions, jtap_metrics = jtap_metrics)
             all_experiment_results[decision_idx][COGSCI_TRIAL] = jtap_results
 
     return all_experiment_results

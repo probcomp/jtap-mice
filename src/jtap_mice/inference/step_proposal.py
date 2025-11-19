@@ -107,35 +107,14 @@ def bottom_up_step_proposal(mi, bottom_up_speed_mean, bottom_up_direction_mean, 
     proposed_direction = circular_normal(bottom_up_direction_mean, proposed_direction_noise) @ "direction"
     return proposed_speed, proposed_direction, bottom_up_proposed_x, bottom_up_proposed_y
 
-@gen
-def hybrid_step_proposal(mi, top_down_next_speed, top_down_next_direction, bottom_up_proposed_x, bottom_up_proposed_y):
-    """
-    Hybrid top-down and bottom-up proposal when object is visible but expected to collide this timestep.
-    
-    Mean values:
-    - Position (x, y): Obtained from positional grid inference (bottom-up, already sampled during grid inference)
-    - Direction: Obtained by running the dynamics model forward from the previous inferred state (top-down)
-    - Speed: Obtained by running the dynamics model forward from the previous inferred state (top-down)
-    
-    Sampling strategy:
-    - Position (x, y): Sampled from grid inference output (no additional noise)
-    - Direction: Sampled with circular normal noise around dynamics model output using σ_COL_direction_prop
-    - Speed: Sampled with truncated normal noise around dynamics model output using σ_speed_stepprop
-    """
-
-    proposed_speed = genjax.truncated_normal(top_down_next_speed, mi.σ_speed_stepprop, jnp.float32(0), mi.max_speed) @ "speed"
-    proposed_direction = circular_normal(top_down_next_direction, mi.σ_COL_direction_prop)@ "direction"
-    return proposed_speed, proposed_direction, bottom_up_proposed_x, bottom_up_proposed_y
-
 step_proposal_switch = genjax.switch(
     top_down_step_proposal,
-    hybrid_step_proposal,
     bottom_up_step_proposal
 )
 
 
 @gen
-def step_proposal(mi, is_fully_hidden, num_target_pixels, mo, bottom_up_proposed_x, bottom_up_proposed_y, prev_prediction_data, step_prop_t):
+def step_proposal(mi, is_fully_hidden, num_target_pixels, mo, bottom_up_proposed_x, prev_prediction_data, step_prop_t):
 
     # extract current data for saving
     current_x, current_y, current_direction, current_speed = mo.x, mo.y, mo.direction, mo.speed

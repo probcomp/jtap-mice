@@ -9,12 +9,12 @@ from jtap_mice.utils import JTAPMiceStimulus
 
 # There are so many JTAP types that are defined in the inference package that it makes sense to have a separate file for them.
 
-def jtap_data_to_numpy(jtap_data):
+def jtap_mice_data_to_numpy(jtap_mice_data):
     """
     Recursively converts all JAX arrays in a JTAPMiceData instance to numpy arrays.
     
     Args:
-        jtap_data: JTAPMiceData instance containing JAX arrays
+        jtap_mice_data: JTAPMiceData instance containing JAX arrays
         
     Returns:
         JTAPMiceData instance with all JAX arrays converted to numpy arrays
@@ -38,14 +38,14 @@ def jtap_data_to_numpy(jtap_data):
             # For primitive types (int, float, bool, etc.), return as-is
             return obj
     
-    return convert_recursive(jtap_data)
+    return convert_recursive(jtap_mice_data)
 
-def jtap_data_to_jax(jtap_data):
+def jtap_mice_data_to_jax(jtap_mice_data):
     """
     Recursively converts all numpy arrays in a JTAPMiceData instance to JAX arrays.
     
     Args:
-        jtap_data: JTAPMiceData instance containing numpy arrays
+        jtap_mice_data: JTAPMiceData instance containing numpy arrays
         
     Returns:
         JTAPMiceData instance with all numpy arrays converted to JAX arrays
@@ -70,15 +70,16 @@ def jtap_data_to_jax(jtap_data):
             # For primitive types (int, float, bool, etc.), return as-is
             return obj
     
-    return convert_recursive(jtap_data)
+    return convert_recursive(jtap_mice_data)
 
 class PredictionData(NamedTuple):
     x: jnp.ndarray
     y: jnp.ndarray
     speed: jnp.ndarray
     direction: jnp.ndarray
-    collision_branch: jnp.ndarray
-    rg: jnp.ndarray
+    hit_boundary: jnp.ndarray
+    is_switching_timestep: jnp.ndarray
+    lr: jnp.ndarray
 
 class TrackingData(NamedTuple):
     x: jnp.ndarray
@@ -92,11 +93,10 @@ class WeightData(NamedTuple):
     incremental_weights: jnp.ndarray
     prev_weights: jnp.ndarray
     final_weights: jnp.ndarray
-    incremental_weights_no_obs: jnp.ndarray
     step_prop_weights_regular: jnp.ndarray
     step_prop_weights_alternative: jnp.ndarray
 
-class JTAPParams(NamedTuple):
+class JTAPMiceParams(NamedTuple):
     max_prediction_steps: int
     max_inference_steps: int
     num_particles: int
@@ -104,7 +104,7 @@ class JTAPParams(NamedTuple):
     simulate_every: int
     inference_input: ChexModelInput
 
-class JTAPInference(NamedTuple):
+class JTAPMiceInference(NamedTuple):
     tracking: TrackingData
     prediction: PredictionData
     weight_data: WeightData
@@ -115,12 +115,11 @@ class JTAPInference(NamedTuple):
     is_target_hidden: jnp.ndarray
     is_target_partially_hidden: jnp.ndarray
     obs_is_fully_hidden: bool
-    stopped_early: bool
 
 class JTAPMiceData(NamedTuple):
     num_jtap_runs: int
-    inference: JTAPInference  # This contains all step data including init
-    params: JTAPParams
+    inference: JTAPMiceInference  # This contains all step data including init
+    params: JTAPMiceParams
     step_prop_retvals: Any
     init_prop_retval: Any
     key_seed: int

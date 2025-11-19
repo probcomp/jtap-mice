@@ -9,17 +9,17 @@ from matplotlib.lines import Line2D
 from scipy.stats import pearsonr
 import seaborn as sns
 from jax.scipy.special import logsumexp
-from jtap_mice.evaluation import get_rg_raw_beliefs
+from jtap_mice.evaluation import get_lr_raw_beliefs
 from jtap_mice.inference import JTAPMiceData
 from jtap_mice.utils import discrete_obs_to_rgb, d2r, r2d
 
-def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, video_offset=(0, 0), viz_key=jax.random.PRNGKey(0), 
+def interpretable_belief_viz(JTAPMice_data, high_res_video, prediction_t_offset=5, video_offset=(0, 0), viz_key=jax.random.PRNGKey(0), 
                   min_dot_alpha=0.2, min_line_alpha=0.04,
                   ax_num=None, timeframe=None, high_res_multiplier=5, diameter=1.0):
 
-    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be of type JTAPMiceData"
+    assert isinstance(JTAPMice_data, JTAPMiceData), "JTAPMice_data must be of type JTAPMiceData"
 
-    inference_input = JTAP_data.params.inference_input
+    inference_input = JTAPMice_data.params.inference_input
 
     def generate_samples(key, n_samples, support, logprobs):
         keys = jax.random.split(key, n_samples)
@@ -34,12 +34,12 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
     max_dot_alpha = 1 # should always be 1, makes no sense to have alpha > 1
     min_dot_alpha = min_dot_alpha
 
-    num_inference_steps = JTAP_data.inference.weight_data.final_weights.shape[0]
-    num_prediction_steps = JTAP_data.params.max_prediction_steps
+    num_inference_steps = JTAPMice_data.inference.weight_data.final_weights.shape[0]
+    num_prediction_steps = JTAPMice_data.params.max_prediction_steps
     max_inference_T = num_inference_steps - 1
     maxt = high_res_video.shape[0]
-    n_particles = JTAP_data.params.num_particles
-    normalized_weights = jnp.exp(JTAP_data.inference.weight_data.final_weights - logsumexp(JTAP_data.inference.weight_data.final_weights, axis = 1, keepdims = True)) # T by N_PARTICLES
+    n_particles = JTAPMice_data.params.num_particles
+    normalized_weights = jnp.exp(JTAPMice_data.inference.weight_data.final_weights - logsumexp(JTAPMice_data.inference.weight_data.final_weights, axis = 1, keepdims = True)) # T by N_PARTICLES
 
     if max_inference_T > maxt:
         print("Too many timesteps in particle data")
@@ -59,10 +59,10 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
     max_inference_T_for_video = max_inference_T - video_offset[1]
 
 
-    inf_x_points = JTAP_data.inference.tracking.x # T by N_PARTICLES
-    inf_y_points = JTAP_data.inference.tracking.y # T by N_PARTICLES
-    pred_x_lines = jnp.concatenate([JTAP_data.inference.tracking.x[:,None,:], JTAP_data.inference.prediction.x], axis = 1) # T by T_pred+1 by N_PARTICLES
-    pred_y_lines = jnp.concatenate([JTAP_data.inference.tracking.y[:,None,:], JTAP_data.inference.prediction.y], axis = 1) # T by T_pred+1 by N_PARTICLES
+    inf_x_points = JTAPMice_data.inference.tracking.x # T by N_PARTICLES
+    inf_y_points = JTAPMice_data.inference.tracking.y # T by N_PARTICLES
+    pred_x_lines = jnp.concatenate([JTAPMice_data.inference.tracking.x[:,None,:], JTAPMice_data.inference.prediction.x], axis = 1) # T by T_pred+1 by N_PARTICLES
+    pred_y_lines = jnp.concatenate([JTAPMice_data.inference.tracking.y[:,None,:], JTAPMice_data.inference.prediction.y], axis = 1) # T by T_pred+1 by N_PARTICLES
     inf_dots_alpha_over_time = min_dot_alpha + normalized_weights * (max_dot_alpha - min_dot_alpha)
     pred_alphas_over_time = min_line_alpha + normalized_weights * (max_line_alpha - min_line_alpha)
     sizes_over_time = jnp.full((num_inference_steps, n_particles), diameter) # T by N_PARTICLES
@@ -100,7 +100,7 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
 
     # WORKS WELL NOW
     im_height = frames[0].shape[0]
-    scale_multiplier = 1 / (JTAP_data.params.image_discretization)*high_res_multiplier
+    scale_multiplier = 1 / (JTAPMice_data.params.image_discretization)*high_res_multiplier
     x_to_pix_x = jax.jit(lambda x, s : (x + 0.5*s) * scale_multiplier)
     y_to_pix_y = jax.jit(lambda y, s : im_height - 1 - (y + 0.5*s) * scale_multiplier)
 
@@ -124,14 +124,14 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
     im = ax1.imshow(frames[0])
 
     # AX2
-    rg_data = get_rg_raw_beliefs(JTAP_data, prediction_t_offset)
-    bars = ax2.bar(range(3), rg_data[0], color = ['green', 'red', 'blue'])
+    lr_data = get_lr_raw_beliefs(JTAPMice_data, prediction_t_offset)
+    bars = ax2.bar(range(3), lr_data[0], color = ['green', 'red', 'blue'])
 
     # Set up the axis limits
     # Set title and x-ticks
-    ax2.set_title('Red or Green: Which will it hit next?', fontsize=10)
+    ax2.set_title('Left or Right: Which will it hit next?', fontsize=10)
     ax2.set_xticks(range(3))
-    ax2.set_xticklabels(['Green', 'Red', 'Uncertain'])
+    ax2.set_xticklabels(['Left', 'Right', 'Uncertain'])
     ax2.set_ylim(0, 1)
 
     # AX3
@@ -140,7 +140,7 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
     max_count = 10
     viz_key, dir_key = jax.random.split(viz_key, 2)
     dir_keys = jax.random.split(dir_key, num_inference_steps)
-    sampled_dir = generate_samples_vmap(dir_keys, n_samples, JTAP_data.inference.tracking.direction, JTAP_data.inference.weight_data.final_weights)
+    sampled_dir = generate_samples_vmap(dir_keys, n_samples, JTAPMice_data.inference.tracking.direction, JTAPMice_data.inference.weight_data.final_weights)
     all_counts_dir = []
     # NOTE: IN THIS VIZ, STEP DIR IS TAKEN  a step before current step
     for i in range(max_inference_T_for_video + 1):
@@ -167,7 +167,7 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
     max_count = 10
     viz_key, speed_key = jax.random.split(viz_key, 2)
     speed_keys = jax.random.split(speed_key, num_inference_steps)
-    sampled_speed = generate_samples_vmap(speed_keys, n_samples, JTAP_data.inference.tracking.speed, JTAP_data.inference.weight_data.final_weights)
+    sampled_speed = generate_samples_vmap(speed_keys, n_samples, JTAPMice_data.inference.tracking.speed, JTAPMice_data.inference.weight_data.final_weights)
     all_counts_speed = []
     # NOTE: IN THIS VIZ, STEP SPEED IS TAKEN  a step before current step
     for i in range(max_inference_T_for_video + 1):
@@ -199,7 +199,7 @@ def interpretable_belief_viz(JTAP_data, high_res_video, prediction_t_offset=5, v
             p_lines[n].set_alpha(round(float(pred_alphas_over_time[idx,n]),2))
 
 
-        for bar, height in zip(bars, rg_data[idx]):
+        for bar, height in zip(bars, lr_data[idx]):
             bar.set_height(height)
         for bar, height in zip(dir_bars, all_counts_dir[idx]):
             bar.set_height(height)

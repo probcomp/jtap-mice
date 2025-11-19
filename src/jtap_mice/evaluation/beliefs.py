@@ -10,19 +10,19 @@ class JTAPMice_Beliefs(NamedTuple):
     decaying_beliefs: np.ndarray
     num_jtap_runs: int
 
-def get_rg_raw_beliefs(JTAP_data, prediction_t_offset):
+def get_lr_raw_beliefs(JTAPMice_data, prediction_t_offset):
 
-    assert isinstance(JTAP_data, JTAPMiceData), "JTAP_data must be a JTAPMiceData"
+    assert isinstance(JTAPMice_data, JTAPMiceData), "JTAPMice_data must be a JTAPMiceData"
     
-    # Get weights and rg data
-    weights = JTAP_data.inference.weight_data.final_weights  # shape: (num_jtap_runs, num_timesteps, num_particles) or (num_timesteps, num_particles)
-    rg_data = JTAP_data.inference.prediction.rg  # shape: (num_jtap_runs, num_timesteps, max_pred_length, num_particles) or (num_timesteps, max_pred_length, num_particles)
+    # Get weights and lr data
+    weights = JTAPMice_data.inference.weight_data.final_weights  # shape: (num_jtap_runs, num_timesteps, num_particles) or (num_timesteps, num_particles)
+    lr_data = JTAPMice_data.inference.prediction.lr  # shape: (num_jtap_runs, num_timesteps, max_pred_length, num_particles) or (num_timesteps, max_pred_length, num_particles)
     
     # Handle both single run and multiple runs cases
     if weights.ndim == 2:
         # Single run case: add batch dimension
         weights = weights[None, ...]
-        rg_data = rg_data[None, ...]
+        lr_data = lr_data[None, ...]
         squeeze_batch = True
     else:
         squeeze_batch = False
@@ -30,18 +30,18 @@ def get_rg_raw_beliefs(JTAP_data, prediction_t_offset):
     # Normalize weights for each timestep and run
     normalized_probs = np.exp(weights - logsumexp(weights, axis=-1, keepdims=True))  # shape: (num_jtap_runs, num_timesteps, num_particles)
     
-    # Get the coded rg hits for the specific prediction offset
-    # NOTE: we can check the last timestep simply because the coded rg stays fixed
+    # Get the coded lr hits for the specific prediction offset
+    # NOTE: we can check the last timestep simply because the coded lr stays fixed
     # once a sensor has been hit.
-    coded_rg_hits = rg_data[:, :, prediction_t_offset - 1, :]  # shape: (num_jtap_runs, num_timesteps, num_particles)
+    coded_lr_hits = lr_data[:, :, prediction_t_offset - 1, :]  # shape: (num_jtap_runs, num_timesteps, num_particles)
     
     # Compute probabilities for each category across all timesteps and runs
-    uncertain_probs = np.sum((coded_rg_hits == 0) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
-    red_probs = np.sum((coded_rg_hits == 1) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
-    green_probs = np.sum((coded_rg_hits == 2) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
+    left_probs = np.sum((coded_lr_hits == 0) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
+    right_probs = np.sum((coded_lr_hits == 1) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
+    uncertain_probs = np.sum((coded_lr_hits == 2) * normalized_probs, axis=-1) / np.sum(normalized_probs, axis=-1)
     
     # Stack results
-    result = np.stack([green_probs, red_probs, uncertain_probs], axis=-1)  # shape: (num_jtap_runs, num_timesteps, 3)
+    result = np.stack([left_probs, right_probs, uncertain_probs], axis=-1)  # shape: (num_jtap_runs, num_timesteps, 3)
     
     # Keep batch dimension for consistency - always return (num_jtap_runs, num_timesteps, 3)
     # The calling code expects this shape
@@ -160,12 +160,12 @@ def jtap_baseline_beliefs(model_beliefs, occlusion_bool, decay_T):
 
     return out
 
-def jtap_compute_beliefs(_jtap_data_, pred_len = None, decay_T = 20, partial_occlusion_counts_as_occlusion = True):
+def jtap_compute_beliefs(_jtap_mice_data_, pred_len = None, decay_T = 20, partial_occlusion_counts_as_occlusion = True):
 
-    if isinstance(_jtap_data_, JTAPMiceData):
-        is_multiple_runs = _jtap_data_.num_jtap_runs > 1
+    if isinstance(_jtap_mice_data_, JTAPMiceData):
+        is_multiple_runs = _jtap_mice_data_.num_jtap_runs > 1
         # max_prediction_steps is always a list, so we need to extract the scalar value
-        max_prediction_steps = _jtap_data_.params.max_prediction_steps[0] if isinstance(_jtap_data_.params.max_prediction_steps, (list, np.ndarray)) else _jtap_data_.params.max_prediction_steps
+        max_prediction_steps = _jtap_mice_data_.params.max_prediction_steps[0] if isinstance(_jtap_mice_data_.params.max_prediction_steps, (list, np.ndarray)) else _jtap_mice_data_.params.max_prediction_steps
     
         if pred_len is not None:
             # first ensure pred_len is not greater than max_prediction_steps
@@ -177,19 +177,19 @@ def jtap_compute_beliefs(_jtap_data_, pred_len = None, decay_T = 20, partial_occ
             # if pred_len is not provided, use max_prediction_steps
             pred_len = max_prediction_steps
         # get raw beliefs
-        model_beliefs = get_rg_raw_beliefs(_jtap_data_, pred_len)
+        model_beliefs = get_lr_raw_beliefs(_jtap_mice_data_, pred_len)
         # get occlusion bool depending on whether partial occlusion counts as occlusion
         if partial_occlusion_counts_as_occlusion:
-            occlusion_bool = _jtap_data_.stimulus.fully_occluded_bool | _jtap_data_.stimulus.partially_occluded_bool 
+            occlusion_bool = _jtap_mice_data_.stimulus.fully_occluded_bool | _jtap_mice_data_.stimulus.partially_occluded_bool 
         else:
-            occlusion_bool = _jtap_data_.stimulus.fully_occluded_bool 
+            occlusion_bool = _jtap_mice_data_.stimulus.fully_occluded_bool 
 
         # get frozen beliefs
         frozen_beliefs = jtap_baseline_beliefs(model_beliefs, occlusion_bool, np.inf)
         # get decaying beliefs
         decaying_beliefs = jtap_baseline_beliefs(model_beliefs, occlusion_bool, decay_T)
         
-        JTAPMice_Beliefs = JTAPMice_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_data_.num_jtap_runs)
+        JTAPMice_Beliefs = JTAPMice_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_mice_data_.num_jtap_runs)
         return JTAPMice_Beliefs
     else:
-        raise ValueError(f"Unsupported type: {type(_jtap_data_)}, supported types are JTAPMiceData")
+        raise ValueError(f"Unsupported type: {type(_jtap_mice_data_)}, supported types are JTAPMiceData")

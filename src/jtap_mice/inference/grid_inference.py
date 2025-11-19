@@ -3,7 +3,7 @@ import genjax
 from genjax import gen, ChoiceMapBuilder as C
 import jax.numpy as jnp
 from typing import NamedTuple
-from jtap_mice.model import likelihood_model, is_ball_in_valid_position
+from jtap_mice.model import likelihood_model, is_ball_in_scene_track
 
 class GridData(NamedTuple):
     grid_proposed_xs: jnp.ndarray
@@ -15,9 +15,9 @@ class GridData(NamedTuple):
     grid_logprobs: jnp.ndarray
     num_obj_pixels: jnp.ndarray
 
-def find_valid_positions_bool(pos_chm, diameter, masked_barriers):
+def find_valid_positions_bool(pos_chm, diameter, scene_length):
     # y is always 0
-    return jax.vmap(is_ball_in_valid_position, in_axes=(0, None, None, None))(pos_chm['x'], jnp.zeros_like(pos_chm['x']), diameter, masked_barriers)
+    return jax.vmap(is_ball_in_scene_track, in_axes=(0, None, None))(pos_chm['x'], diameter, scene_length)
 
 grid_likelihood_evaluator = jax.vmap(
     likelihood_model.logpdf,
@@ -39,7 +39,7 @@ def adaptive_grid_size(num_obj_pixels, grid_size_bounds):
     grid_size = grid_size_bounds[1] - ((grid_size_bounds[1] - grid_size_bounds[0]) * proportion_obj_pixels)
     return grid_size
 
-def make_position_grid(mi, x_center, _, x_size, __):
+def make_position_grid(mi, x_center, x_size):
     # 1D grid: only over x dimension, y always 0.
     num_x_grid = mi.num_x_grid_arr.shape[0]
     min_x, max_x = x_center - x_size/2, x_center + x_size/2

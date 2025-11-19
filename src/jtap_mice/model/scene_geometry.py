@@ -33,9 +33,8 @@ def is_ball_fully_visible(x, y, diameter, masked_occluders):
     return jnp.logical_not(is_ball_intersecting_rectangle(x, y, diameter, masked_occluders))
 
 @jax.jit
-def is_ball_in_valid_position(x, y, diameter, masked_barriers):
-    return jnp.logical_not(is_ball_intersecting_rectangle(x, y, diameter, masked_barriers))
-    
+def is_ball_in_scene_track(x, diameter, scene_length):
+    return jnp.logical_and(x >= 0, x <= scene_length - diameter)
 
 @jax.jit
 def is_ball_fully_hidden_inner(masked_occluder, x, y, diameter):

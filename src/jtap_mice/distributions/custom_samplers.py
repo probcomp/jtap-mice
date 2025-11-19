@@ -1,5 +1,8 @@
 import numpy as np
 from scipy.stats import truncnorm
+from genjax import Pytree, ExactDensity
+import jax
+import jax.numpy as jnp
 
 def truncated_normal_sample(key_seed, params, size):
     """

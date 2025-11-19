@@ -8,6 +8,7 @@ class MouseData(NamedTuple):
 
 class JTAPMiceStimulus(NamedTuple):
     name: str   
+    trial_number: int
     mouse_data: Optional[MouseData]
     discrete_obs: np.ndarray
     is_occlusion_trial: bool
@@ -23,10 +24,10 @@ class JTAPMiceStimulus(NamedTuple):
     pixel_density: int
 
 def load_left_right_stimulus(
-    stimulus_path, 
-    pixel_density=10, 
-    skip_t=1, 
-    rgb_only=False, 
+    stimulus_path,
+    pixel_density=10,
+    skip_t=1,
+    rgb_only=False,
     trial_number=None,
 ):
     """
@@ -34,40 +35,65 @@ def load_left_right_stimulus(
     """
     # Only support the new-style JSON with trial structure
     if not (os.path.isfile(stimulus_path) and stimulus_path.endswith('.json')):
-        raise ValueError("Only new-style .json stimulus files are supported, found: {!r}".format(stimulus_path))
-    
+        raise ValueError(f"Only new-style .json stimulus files are supported, found: {stimulus_path!r}")
+
     with open(stimulus_path, 'r') as f:
         all_trials_data = json.load(f)
 
     # trial_number must be specified
     assert trial_number is not None, "trial_number must be specified for new-style mice stimuli JSON"
-    trial_data = all_trials_data["trials"][trial_number]
-    name = f"{os.path.splitext(os.path.basename(stimulus_path))[0]}_trial{trial_number}"
 
-    # Use info from config - all required keys must exist
+    # ---- Extraction from JSON, following example lr_v1.json ----
+    # Top level: {"config": {...}, "trial_data": { "1": [...], ... } }
+    # config expected keys (from the example): scene_width inferred from scene_length, fps, diameter, scene_height (maybe), etc.
     config = all_trials_data["config"]
-    scene_length = float(config["scene_length"])
-    fps = int(config["fps"])
-    diameter = float(config["diameter"])
+
+    # Find the field for trial_data (called "trial_data", not "trials")
+    # The trial keys in "trial_data" are string integers starting at "1"
+    # incoming trial_number is intended to be 1-based (e.g., 1, 2, ...)
+    trial_key = str(trial_number)
+    if "trial_data" not in all_trials_data:
+        raise ValueError(f"JSON is missing 'trial_data' key. Found keys: {list(all_trials_data.keys())}")
+    trial_data_dict = all_trials_data["trial_data"]
+    if trial_key not in trial_data_dict:
+        raise ValueError(f"Trial {trial_key} not found in 'trial_data' in stimulus file.")
+
+    positions = np.asarray(trial_data_dict[trial_key], dtype=np.float32)
+    # positions shape (T,), represents X coordinates per frame
+
+    # Name: same format as before, use file name + trial number
+    name = f"{os.path.splitext(os.path.basename(stimulus_path))[0]}_trial_{trial_key}"
+
+    # Use info from config - all required keys should exist per lr_v1.json
+    # scene_length is called "LEFT_RIGHT_LENGTH" in lr_v1.json, see example
+    # diameter is called "SPEED" (probably not), so use a fallback or a default if not present
+    # scene_height is NOT present in example, so set to fixed (e.g., 1.0 or 20.0)
+    scene_length = float(config["LEFT_RIGHT_LENGTH"])
+    fps = int(config["FRAMES_PER_SECOND"])
+    # The "diameter" is not in config in the lr_v1.json example. Set a reasonable default if not present.
+    diameter = 1.0
     scene_width = scene_length
-    scene_height = config["scene_height"]
-    
-    # Get ball positions (centers)
-    positions = np.asarray(trial_data["positions"], dtype=np.float32)  # (T,) or (T,1), one X per frame
-    if positions.ndim == 2:
-        positions = positions.squeeze(-1)
-    # Y is always centered vertically (for this mice setup): put ball in the center in Y
-    ball_center_y = float(config["ball_y_center"]) if "ball_y_center" in config else float(scene_height) / 2.0
+    # scene_height MAY not exist, so set to a default value
+    scene_height = diameter
+    # Y is always centered vertically for this setup
+    ball_center_y = diameter / 2.0
+
     ground_truth_positions = np.stack([positions, np.full_like(positions, ball_center_y)], axis=1)
 
-    is_switching_trial = bool(trial_data.get("switching", False) or trial_data.get("is_switching", False))
-    # No occlusion for now, but could be in the config in future
-    occluders = []
+    # is_switching is not in lr_v1.json's trial_data, so set to False unless inference needed (not available in current JSON)
+    # Determine if the trial is a "switching" trial by checking whether the ball changes direction.
+    # We estimate this by checking the sign of velocity (finite differencing; switching if any sign change).
+    if len(positions) > 1:
+        velocities = np.diff(positions)
+        # Find where the sign changes (i.e., product of neighboring velocities < 0)
+        sign_changes = np.where(np.diff(np.sign(velocities)) != 0)[0]
+        is_switching_trial = len(sign_changes) > 0
+    else:
+        is_switching_trial = False
+    is_occlusion_trial = False
     partially_occluded_bool = np.zeros(len(positions), dtype=bool)
     fully_occluded_bool = np.zeros(len(positions), dtype=bool)
-    is_occlusion_trial = False
 
-    # Create the video and discrete obs
     rgb_frames, discrete_obs = create_mice_video_from_positions(
         positions=positions,
         scene_width=scene_width,
@@ -79,27 +105,26 @@ def load_left_right_stimulus(
     )
     num_frames = len(rgb_frames)
 
-    # By default, no mouse data for these stimuli
     mouse_data = None
-    # Final output
     if rgb_only:
         return rgb_frames
     else:
         return JTAPMiceStimulus(
-            name = name,
-            mouse_data = mouse_data,
-            discrete_obs = discrete_obs,
-            is_occlusion_trial = is_occlusion_trial,
-            is_switching_trial = is_switching_trial,
-            scene_length = scene_length,
-            partially_occluded_bool = partially_occluded_bool,
-            fully_occluded_bool = fully_occluded_bool,
-            ground_truth_positions = ground_truth_positions,
-            num_frames = num_frames,
-            diameter = diameter,
-            fps = fps,
-            skip_t = skip_t,
-            pixel_density = pixel_density
+            name=name,
+            trial_number=int(trial_key),
+            mouse_data=mouse_data,
+            discrete_obs=discrete_obs,
+            is_occlusion_trial=is_occlusion_trial,
+            is_switching_trial=is_switching_trial,
+            scene_length=scene_length,
+            partially_occluded_bool=partially_occluded_bool,
+            fully_occluded_bool=fully_occluded_bool,
+            ground_truth_positions=ground_truth_positions,
+            num_frames=num_frames,
+            diameter=diameter,
+            fps=fps,
+            skip_t=skip_t,
+            pixel_density=pixel_density
         )
 
 def create_mice_video_from_positions(
