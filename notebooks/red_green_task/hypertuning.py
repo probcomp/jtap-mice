@@ -5,7 +5,7 @@ from jtap_mice.model import full_init_model, full_step_model, likelihood_model, 
 from jtap_mice.inference import run_jtap, run_parallel_jtap, JTAPMiceData, pad_obs_with_last_frame
 from jtap_mice.viz import rerun_jtap_stimulus, rerun_jtap_single_run, jtap_plot_rg_lines, red_green_viz_notebook, create_log_frequency_heatmaps
 from jtap_mice.utils import load_red_green_stimulus, JTAPMiceStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees, multislice_pytree
-from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results
+from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAPMice_Beliefs, JTAP_Decisions, JTAP_Results
 from jtap_mice.distributions import truncated_normal_sample, discrete_normal_sample
 from jtap_mice.core import SuperPytree
 
@@ -125,7 +125,7 @@ def run_all_cogsci_trials(num_jtap_runs, Model_Input, num_particles, smc_key_see
         Model_Input.prepare_scene_geometry(jtap_stimulus)
         smc_key_seed += 1
         JTAP_DATA, _ = run_parallel_jtap(num_jtap_runs, smc_key_seed, Model_Input, ESS_proportion, jtap_stimulus, num_particles, max_inference_steps = max_inference_steps)
-        jtap_beliefs = jtap_compute_beliefs(JTAP_DATA)
+        JTAPMice_Beliefs = jtap_compute_beliefs(JTAP_DATA)
 
         for decision_idx in range(num_decision_runs_per_tuning_run):
             press_thresh_hyperparams = all_experiment_results[decision_idx]['press_thresh_hyperparams']
@@ -143,9 +143,9 @@ def run_all_cogsci_trials(num_jtap_runs, Model_Input, num_particles, smc_key_see
                 starting_delay_hyperparams = starting_delay_hyperparams
             )
 
-            jtap_decisions, jtap_decision_model_params = jtap_compute_decisions(jtap_beliefs, jtap_decision_model_hyperparams, remove_keypress_to_save_memory = True, decision_model_version = DECISION_MODEL_VERSION)
+            jtap_decisions, jtap_decision_model_params = jtap_compute_decisions(JTAPMice_Beliefs, jtap_decision_model_hyperparams, remove_keypress_to_save_memory = True, decision_model_version = DECISION_MODEL_VERSION)
             jtap_metrics = jtap_compute_decision_metrics(jtap_decisions, jtap_stimulus, partial_occlusion_in_targeted_analysis=True, ignore_uncertain_line=True)
-            jtap_results = JTAP_Results(jtap_data = None, jtap_beliefs = None, jtap_decisions = jtap_decisions, jtap_metrics = jtap_metrics)
+            jtap_results = JTAP_Results(jtap_data = None, JTAPMice_Beliefs = None, jtap_decisions = jtap_decisions, jtap_metrics = jtap_metrics)
             all_experiment_results[decision_idx][COGSCI_TRIAL] = jtap_results
 
     return all_experiment_results

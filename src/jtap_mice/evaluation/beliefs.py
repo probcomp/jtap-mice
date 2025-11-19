@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 from jtap_mice.inference import JTAPMiceData
 
-class JTAP_Beliefs(NamedTuple):
+class JTAPMice_Beliefs(NamedTuple):
     model_beliefs: np.ndarray
     frozen_beliefs: np.ndarray
     decaying_beliefs: np.ndarray
@@ -189,7 +189,7 @@ def jtap_compute_beliefs(_jtap_data_, pred_len = None, decay_T = 20, partial_occ
         # get decaying beliefs
         decaying_beliefs = jtap_baseline_beliefs(model_beliefs, occlusion_bool, decay_T)
         
-        jtap_beliefs = JTAP_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_data_.num_jtap_runs)
-        return jtap_beliefs
+        JTAPMice_Beliefs = JTAPMice_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_data_.num_jtap_runs)
+        return JTAPMice_Beliefs
     else:
         raise ValueError(f"Unsupported type: {type(_jtap_data_)}, supported types are JTAPMiceData")

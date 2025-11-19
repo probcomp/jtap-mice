@@ -59,7 +59,7 @@ from jtap_mice.model import full_init_model, full_step_model, likelihood_model, 
 from jtap_mice.inference import run_jtap, run_parallel_jtap, JTAPMiceData
 from jtap_mice.viz import jtap_plot_rg_lines, create_log_frequency_heatmaps
 from jtap_mice.utils import load_red_green_stimulus, JTAPMiceStimulus, ChexModelInput, d2r, i_, f_, slice_pt, init_step_concat, discrete_obs_to_rgb, load_original_jtap_results, stack_pytrees, concat_pytrees
-from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAP_Beliefs, JTAP_Decisions, JTAP_Results, compute_combined_metrics
+from jtap_mice.evaluation import JTAP_Decision_Model_Hyperparams, jtap_compute_beliefs, jtap_compute_decisions, jtap_compute_decision_metrics, JTAP_Metrics, JTAPMice_Beliefs, JTAP_Decisions, JTAP_Results, compute_combined_metrics
 from jtap_mice.distributions import truncated_normal_sample, discrete_normal_sample
 from jtap_mice.core import SuperPytree
 
@@ -190,7 +190,7 @@ def create_compressed_results(jtap_results: JTAP_Results) -> JTAP_Results:
 
     return JTAP_Results(
         jtap_data=compressed_jtap_data,
-        jtap_beliefs=jtap_results.jtap_beliefs,
+        JTAPMice_Beliefs=jtap_results.JTAPMice_Beliefs,
         jtap_decisions=jtap_results.jtap_decisions,
         jtap_metrics=jtap_results.jtap_metrics
     )
@@ -353,11 +353,11 @@ def run_single_trial(
     pretty_success(f"JTAP inference completed in {end_time - start_time:.2f} seconds (includes possible JAX JIT compilation)")
 
     pretty_info("Computing beliefs...")
-    jtap_beliefs = jtap_compute_beliefs(jtap_data)
+    JTAPMice_Beliefs = jtap_compute_beliefs(jtap_data)
 
     pretty_info("Computing decisions...")
     jtap_decisions, jtap_decision_model_params = jtap_compute_decisions(
-        jtap_beliefs, decision_hyperparams, remove_keypress_to_save_memory=True, decision_model_version=decision_model_version
+        JTAPMice_Beliefs, decision_hyperparams, remove_keypress_to_save_memory=True, decision_model_version=decision_model_version
     )
 
     if jtap_stimulus.human_data is not None:
@@ -371,7 +371,7 @@ def run_single_trial(
 
     jtap_results = JTAP_Results(
         jtap_data=jtap_data,
-        jtap_beliefs=jtap_beliefs,
+        JTAPMice_Beliefs=JTAPMice_Beliefs,
         jtap_decisions=jtap_decisions,
         jtap_metrics=jtap_metrics,
     )
@@ -414,7 +414,7 @@ def run_single_trial(
     # ==== RAW BELIEFS PLOT ====
     pretty_info("Creating raw beliefs plot...")
     raw_beliefs_fig = jtap_plot_rg_lines(
-        jtap_beliefs,
+        JTAPMice_Beliefs,
         stimulus=jtap_stimulus,
         show="model",
         include_baselines=True,
@@ -523,9 +523,9 @@ def run_batch_trials(
             )
             end_time = time.time()
 
-            jtap_beliefs = jtap_compute_beliefs(jtap_data)
+            JTAPMice_Beliefs = jtap_compute_beliefs(jtap_data)
             jtap_decisions, _ = jtap_compute_decisions(
-                jtap_beliefs, decision_hyperparams, remove_keypress_to_save_memory=True, decision_model_version=decision_model_version
+                JTAPMice_Beliefs, decision_hyperparams, remove_keypress_to_save_memory=True, decision_model_version=decision_model_version
             )
             if jtap_stimulus.human_data is not None:
                 jtap_metrics = jtap_compute_decision_metrics(
@@ -536,7 +536,7 @@ def run_batch_trials(
 
             jtap_results = JTAP_Results(
                 jtap_data=jtap_data,
-                jtap_beliefs=jtap_beliefs,
+                JTAPMice_Beliefs=JTAPMice_Beliefs,
                 jtap_decisions=jtap_decisions,
                 jtap_metrics=jtap_metrics,
             )
@@ -573,7 +573,7 @@ def run_batch_trials(
 
             # Also plot and save raw beliefs plot
             raw_beliefs_fig = jtap_plot_rg_lines(
-                jtap_beliefs,
+                JTAPMice_Beliefs,
                 stimulus=jtap_stimulus,
                 show="model",
                 include_human=include_human,

@@ -1,4 +1,4 @@
-from jtap_mice.evaluation import JTAP_Beliefs, JTAP_Decisions, JTAP_Metrics
+from jtap_mice.evaluation import JTAPMice_Beliefs, JTAP_Decisions, JTAP_Metrics
 from jtap_mice.utils import JTAPMiceStimulus
 from jtap_mice.viz.figure_visuals import draw_stimulus_image
 from matplotlib.gridspec import GridSpec
@@ -49,7 +49,7 @@ def jtap_plot_rg_lines(
     if plot_stat not in {"mean", "median"}:
         raise ValueError("plot_stat must be 'mean' or 'median'.")
 
-    assert isinstance(rg_values, JTAP_Beliefs) or isinstance(rg_values, JTAP_Decisions), "rg_values must be a JTAP_Beliefs or JTAP_Decisions"
+    assert isinstance(rg_values, JTAPMice_Beliefs) or isinstance(rg_values, JTAP_Decisions), "rg_values must be a JTAPMice_Beliefs or JTAP_Decisions"
     assert isinstance(stimulus, JTAPMiceStimulus) if stimulus is not None else True, "stimulus must be a JTAPMiceStimulus"
     assert isinstance(jtap_metrics, JTAP_Metrics) if jtap_metrics is not None else True, "jtap_metrics must be a JTAP_Metrics"
     
@@ -63,7 +63,7 @@ def jtap_plot_rg_lines(
     num_pseudo_participants = getattr(rg_values, "num_pseudo_participants", None)
     is_multiple_runs = num_jtap_runs > 1
 
-    is_beliefs = isinstance(rg_values, JTAP_Beliefs)
+    is_beliefs = isinstance(rg_values, JTAPMice_Beliefs)
     is_decisions = isinstance(rg_values, JTAP_Decisions)
     y_label = "Weighted Beliefs" if is_beliefs else "Proportions"
 
@@ -106,7 +106,7 @@ def jtap_plot_rg_lines(
             if is_decisions and jtap_run_idx is not None:
                 arr = rg_values.decaying_keypresses
         else:
-            raise ValueError(f"Unknown value to extract from JTAP_Beliefs: {show_key}")
+            raise ValueError(f"Unknown value to extract from JTAPMice_Beliefs: {show_key}")
         return arr, label
 
     def get_rmse_values(show_key):
@@ -207,7 +207,7 @@ def jtap_plot_rg_lines(
                     raise ValueError(f"JTAP_Decisions array shape {arr.shape} not supported for plotting (single run)")
                 return arr, None
 
-        # For JTAP_Beliefs
+        # For JTAPMice_Beliefs
         if is_beliefs:
             stat_fn = np.mean if plot_stat == "mean" else np.median
             if jtap_run_mode:

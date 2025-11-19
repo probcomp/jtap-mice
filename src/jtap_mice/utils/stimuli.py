@@ -5,15 +5,15 @@ import os
 import pandas as pd
 import pickle
 
-class HumanData(NamedTuple):
-    human_keypresses: np.ndarray
-    human_output: np.ndarray
+class MouseData(NamedTuple):
+    pass
 
 class JTAPMiceStimulus(NamedTuple):
     name: str   
-    human_data: HumanData
+    mouse_data: MouseData
     discrete_obs: np.ndarray
     is_occlusion_trial: bool
+    is_switching_trial: bool
     partially_occluded_bool: np.ndarray
     fully_occluded_bool: np.ndarray
     ground_truth_positions: np.ndarray
@@ -24,7 +24,7 @@ class JTAPMiceStimulus(NamedTuple):
     pixel_density: int
 
 
-def load_red_green_stimulus(
+def load_left_right_stimulus(
     stimulus_path, 
     pixel_density=10, 
     skip_t=1, 
@@ -74,68 +74,9 @@ def load_red_green_stimulus(
         return rgb_frames
     else:
         # Create JTAPMiceStimulus object
-        stimulus = JTAPMiceStimulus(name = name, discrete_obs = discrete_obs, partially_occluded_bool = partially_occluded_bool, fully_occluded_bool = fully_occluded_bool, ground_truth_positions = ground_truth_positions, num_frames = len(rgb_frames), diameter = diameter, fps = fps, skip_t = skip_t, pixel_density = pixel_density, human_data = human_data, is_occlusion_trial = is_occlusion_trial) # type: ignore
+        stimulus = JTAPMiceStimulus(name = name, discrete_obs = discrete_obs, partially_occluded_bool = partially_occluded_bool, fully_occluded_bool = fully_occluded_bool, ground_truth_positions = ground_truth_positions, num_frames = len(rgb_frames), diameter = diameter, fps = fps, skip_t = skip_t, pixel_density = pixel_density, mouse_data = mouse_data, is_occlusion_trial = is_occlusion_trial, is_switching_trial = is_switching_trial) # type: ignore
         
         return stimulus
-
-def jtap_compute_outputs(keypresses_array):
-    green_accuracy = np.mean(keypresses_array == 0, axis = 0)
-    red_accuracy = np.mean(keypresses_array == 1, axis = 0)
-    uncertain_accuracy = np.mean(keypresses_array == 2, axis = 0)
-    return np.stack([green_accuracy, red_accuracy, uncertain_accuracy]).T
-
-
-def process_human_data(human_data_df):
-    """
-    Process human data DataFrame and convert to keypresses array.
-    
-    Args:
-        human_data (pd.DataFrame): DataFrame with columns: session_id, frame, green, red, uncertain
-        
-    Returns:
-        np.ndarray: Array of shape (N, T) where N is number of sessions and T is number of frames.
-                   Values are 0 (green), 1 (red), 2 (uncertain), or -1 (missing data).
-    """
-    # Get unique session IDs and max frame number
-    session_ids = sorted(human_data_df['session_id'].unique())
-    max_frame = human_data_df['frame'].max()
-    N = len(session_ids)
-    T = max_frame + 1  # +1 because frames start from 0
-
-    # Initialize the N x T array
-    human_keypresses = np.full((N, T), -1, dtype=int)  # -1 as placeholder for missing data
-
-    # Create session_id to index mapping for faster lookup
-    session_to_idx = {session_id: i for i, session_id in enumerate(session_ids)}
-    
-    # Convert DataFrame columns to numpy arrays for vectorized operations
-    session_ids_array = human_data_df['session_id'].values
-    frames_array = human_data_df['frame'].values
-    green_array = human_data_df['green'].values
-    red_array = human_data_df['red'].values
-    uncertain_array = human_data_df['uncertain'].values
-    
-    # Vectorized assert check: exactly one of the three fields should be 1
-    sums = green_array + red_array + uncertain_array
-    if not np.all(sums == 1):
-        bad_indices = np.where(sums != 1)[0]
-        for idx in bad_indices:
-            session_id = session_ids_array[idx]
-            frame = frames_array[idx]
-            assert False, f"Session {session_id}, frame {frame}: exactly one of green/red/uncertain should be 1"
-    
-    # Map session_ids to indices vectorized
-    session_indices = np.array([session_to_idx[sid] for sid in session_ids_array])
-    
-    # Calculate keypress values vectorized: 0 for green, 1 for red, 2 for uncertain
-    keypress_values = green_array * 0 + red_array * 1 + uncertain_array * 2
-    
-    # Fill the array using advanced indexing
-    human_keypresses[session_indices, frames_array] = keypress_values
-
-    human_output = jtap_compute_outputs(human_keypresses)
-    
-    return human_keypresses, human_output
 
 def rgb_to_discrete_obs(rgb_video_original, skip_t = 1):
     """
@@ -180,17 +121,8 @@ def rgb_to_discrete_obs(rgb_video_original, skip_t = 1):
     # Gray: RGB around 128
     discrete_obs[(r >= 118) & (r <= 138) & (g >= 118) & (g <= 138) & (b >= 118) & (b <= 138)] = 1
     
-    # Black: RGB < 50
-    discrete_obs[(r < 50) & (g < 50) & (b < 50)] = 3
-    
     # Blue: low R,G, high B
     discrete_obs[(r < 100) & (g < 100) & (b > 220)] = 2
-    
-    # Red: high R, low G,B  
-    discrete_obs[(r > 220) & (g < 100) & (b < 100)] = 4
-    
-    # Green: low R,B, high G
-    discrete_obs[(r < 100) & (g > 220) & (b < 100)] = 5
     
     return discrete_obs
 
@@ -233,9 +165,6 @@ def discrete_obs_to_rgb(discrete_obs):
     rgb_video[discrete_obs == 0] = [255, 255, 255]  # White background
     rgb_video[discrete_obs == 1] = [128, 128, 128]  # Gray
     rgb_video[discrete_obs == 2] = [0, 0, 255]      # Blue (target)
-    rgb_video[discrete_obs == 3] = [0, 0, 0]        # Black (barriers)
-    rgb_video[discrete_obs == 4] = [255, 0, 0]      # Red (red sensor)
-    rgb_video[discrete_obs == 5] = [0, 255, 0]      # Green (green sensor)
     
     return rgb_video
 
@@ -412,64 +341,3 @@ def create_video_from_simulation_data(simulation_data, pixel_density=20, skip_t 
         assert not (is_fully_occluded and is_partially_occluded), "Target is both fully and partially occluded"
 
     return rgb_video, partially_occluded_bool, fully_occluded_bool, discrete_obs_video
-
-#########################################
-# Left Right Stimulus
-#########################################
-
-def discrete_lr_obs_to_rgb(discrete_obs):
-    """
-    Convert discrete pixel values back to RGB video frames for Left Right Stimulus
-
-    Args:
-        discrete_obs (np.ndarray): Discrete pixel array of shape (T, H, W) with
-                                 integer values representing different scene elements.
-                                 Expected dtype is int8 or compatible integer type.
-                                 Values should be in range [0, 2].
-
-    Returns:
-        np.ndarray: RGB video array of shape (T, H, W, 3) with uint8 values
-                   in range [0, 255]. Color mapping:
-                   - 0: White background [255, 255, 255]
-                   - 1: Gray occluders [128, 128, 128]
-                   - 2: Blue (target) [0, 0, 255]
-
-    Note:
-        This function assumes the input follows the discrete pixel encoding
-        used by JTAP stimulus processing pipeline.
-    """
-    # Convert to numpy array if not already
-    discrete_obs = np.array(discrete_obs)
-    
-    # Initialize RGB output array
-    rgb_video = np.zeros((*discrete_obs.shape, 3), dtype=np.uint8)
-    
-    # Create color mapping - background (0) defaults to black, will be set to white
-    rgb_video[discrete_obs == 0] = [255, 255, 255]  # White background
-    rgb_video[discrete_obs == 1] = [128, 128, 128]  # Gray
-    rgb_video[discrete_obs == 2] = [0, 0, 255]      # Blue (target)
-
-    return rgb_video
-
-
-#########################################
-# Original JTAP Results loading
-#########################################
-
-def load_original_jtap_results():
-    """
-    Load original JTAP results from a pickle file
-
-    Args:
-        None
-
-    Returns:
-        original_jtap_results (dict): Dictionary containing the original JTAP results
-    """
-
-    from jtap_mice.utils import get_assets_dir
-    
-    original_jtap_results_path = os.path.join(get_assets_dir(), 'original_jtap_data', 'original_jtap_results.pkl')
-    with open(original_jtap_results_path, 'rb') as f:
-        original_jtap_results = pickle.load(f)
-    return original_jtap_results
