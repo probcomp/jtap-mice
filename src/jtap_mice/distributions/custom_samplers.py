@@ -27,3 +27,19 @@ def discrete_normal_sample(key_seed, params, size):
 
     rng = np.random.RandomState(key_seed)
     return rng.choice(discrete_values, size=size, p=probabilities)
+
+@Pytree.dataclass
+class DirectionFlipDistribution(ExactDensity):
+    def sample(self, key, direction, direction_flip_prob, **kwargs):
+        flip = jax.random.bernoulli(key, p = direction_flip_prob) * direction
+        return jnp.where(flip, -direction, direction)
+
+    def logpdf(self, x, direction, direction_flip_prob, **kwargs):
+        same = (x == direction)
+        flipped = (x == -direction)
+        return jnp.where(
+            same, jnp.log1p(-direction_flip_prob),  # log(1 - p)
+            jnp.where(flipped, jnp.log(direction_flip_prob), -jnp.inf)
+        )
+    
+direction_flip_distribution = DirectionFlipDistribution()

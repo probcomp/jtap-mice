@@ -17,7 +17,7 @@ class ChexModelInput:
     proposal_direction_outlier_alpha: float
     σ_pos: float
     σ_speed: float
-    σ_direction: float
+    model_direction_flip_prob: float
     pixel_corruption_prob: float
     tile_size: int
     σ_pixel_spatial: float
@@ -75,9 +75,8 @@ class ChexModelInput:
 
 
 ModelOutput = namedtuple("ModelOutput", [
-    "diameter", "x", "y", "speed", "direction", "hit_boundary",
-    "masked_occluders", "is_target_hidden", "is_target_partially_hidden",
-    "is_target_visible", "collision_branch", "last_collision_data", "T"
+    "diameter", "x", "y", "speed", "direction", "hit_boundary", "is_switching_timestep", "masked_occluders", "is_target_hidden", "is_target_partially_hidden",
+    "is_target_visible", "T"
 ])
 
 def extract_disjoint_rectangles(mask, scale = 0.1):
