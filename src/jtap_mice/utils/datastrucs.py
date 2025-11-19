@@ -41,7 +41,7 @@ class ChexModelInput:
     σ_speed_sim: float = None
     σ_direction_sim: float = None
     σ_pos_initprop: float = None
-    σ_direction_stepprop: float = None
+    σ_direction_stepprop_flip_prob: float = None
     σ_speed_stepprop: float = None
     σ_pos_stepprop: float = None
 
