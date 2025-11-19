@@ -340,7 +340,7 @@ def run_jtap(key_seed, mi, ESS_proportion, stimulus, num_particles, max_inferenc
         
     initial_key = jax.random.key(key_seed)
     # cannot convert max inference steps and num particles to int32, as they are static args
-    jax_jtap_mice_data = run_jtap_(initial_key, mi, jnp.float32(ESS_proportion), jnp.asarray(discrete_obs), max_inference_steps, num_particles)
+    jax_jtap_mice_data, xx = run_jtap_(initial_key, mi, jnp.float32(ESS_proportion), jnp.asarray(discrete_obs), max_inference_steps, num_particles)
     if max_inference_steps is None:
         jtap_mice_data = jtap_mice_data_to_numpy(jax_jtap_mice_data)
     else:
@@ -351,7 +351,7 @@ def run_jtap(key_seed, mi, ESS_proportion, stimulus, num_particles, max_inferenc
     jtap_mice_data = jtap_mice_data._replace(stimulus = stimulus)
     jtap_mice_data = jtap_mice_data._replace(key_seed = key_seed)
     jtap_mice_data = jtap_mice_data._replace(num_jtap_runs = 1)
-    return jtap_mice_data
+    return jtap_mice_data, xx
 
 # NOTE need to figure out how to handle this, or keep it as it is
 def run_parallel_jtap(num_jtap_runs, key_seed, mi, ESS_proportion, stimulus, num_particles, max_inference_steps = None):

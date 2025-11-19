@@ -135,44 +135,7 @@ def rerun_jtap_single_run(
     # Step 9: Compute lr expectation. Output is T by 3 (left, right, uncertain)
     lr_raw_beliefs = get_run_data(get_lr_raw_beliefs(JTAPMICE_DATA, num_prediction_steps), jtap_run_idx)
 
-    
-    # Step 10: Compute speed and direction samples
-    n_samples = 1000
-
-    num_speed_bins = int(max_speed/ 0.1) + 1
-    rng = np.random.default_rng()
-    sampled_speeds = np.array([
-        rng.choice(tracking_speed[t], size=n_samples, p=normalized_nonlog_weights[t])
-        for t in range(num_inference_steps)
-    ])  # T by n_samples
-
-    # Compute speed histogram bins for all timesteps at once (fully batched)
-    speed_bin_edges = np.linspace(0, max_speed, num_speed_bins + 1)
-    # Use numpy's histogram function with 2D input to batch process all timesteps
-    speed_bin_counts = np.array([
-        np.histogram(sampled_speeds[t], bins=speed_bin_edges, density=True)[0]
-        for t in range(num_inference_steps)
-    ])  # T by num_speed_bins
-    speed_bin_counts /= speed_bin_counts.max()
-    speed_bin_centers = (speed_bin_edges[:-1] + speed_bin_edges[1:]) / 2
-
-    num_direction_bins = 90
-    sampled_directions = np.array([
-        rng.choice(tracking_direction[t], size=n_samples, p=normalized_nonlog_weights[t])
-        for t in range(num_inference_steps)
-    ])  # T by n_samples
-
-    # Compute direction histogram bins for all timesteps at once (fully batched)
-    direction_bin_edges = np.linspace(-np.pi, np.pi, num_direction_bins + 1)
-    # Use numpy's histogram function with 2D input to batch process all timesteps
-    direction_bin_counts = np.array([
-        np.histogram(sampled_directions[t], bins=direction_bin_edges, density=True)[0]
-        for t in range(num_inference_steps)
-    ])  # T by num_direction_bins
-    direction_bin_counts /= direction_bin_counts.max()
-    direction_bin_centers = (direction_bin_edges[:-1] + direction_bin_edges[1:]) / 2
-
-    # Step 11: Compute weight component correlations
+    # Step 10: Compute weight component correlations
     weight_component_correlations = compute_weight_component_correlations(JTAPMICE_DATA, run_idx=jtap_run_idx)
 
     ################################################################################
@@ -182,8 +145,8 @@ def rerun_jtap_single_run(
     if render_grid and hasattr(JTAPMICE_DATA.inference, "grid_data"):
         # Get the grid for the first particle (they are the same for every particle)
         grid_x = get_run_data(JTAPMICE_DATA.inference.grid_data.x_grid, jtap_run_idx)  # shape: [T, num_grid_cells]
-        grid_y = get_run_data(JTAPMICE_DATA.inference.grid_data.y_grid, jtap_run_idx)
-        if grid_x is not None and grid_y is not None:
+        # y is always 0 for grid positions (1D grid only over x dimension)
+        if grid_x is not None:
             # Prepare: for each timestep, select valid grid points inside scene bounds, transform for rerun rendering.
             grid_positions_per_frame = []
             has_valid_grid_over_time = []
@@ -195,7 +158,7 @@ def rerun_jtap_single_run(
                     has_valid_grid_over_time.append(False)
                     continue
                 x_t = grid_x[t]   # shape (num_grid_cells,)
-                y_t = grid_y[t]
+                y_t = np.zeros_like(x_t)  # y is always 0 for grid positions
                 # Consider cells inside the scene (x in [0, image_width/pixel_density - diameter], y in [0, image_height/pixel_density - diameter])
                 # We'll check scene bounds in image units (scene coordinates)
                 # Since coordinate system is 0-centered and diameter in scene units, usually grid values are from -diameter/2 to scene-diameter/2
@@ -239,11 +202,6 @@ def rerun_jtap_single_run(
     grid_red_color = [255, 0, 0, 255]
 
     orange_color = [255, 140, 0, 255]  # velocity arrow color
-
-    # Set up line series styling for LR beliefs (static, applies to all timelines)
-    rr.log("lr_beliefs/left", rr.SeriesLines(colors=[255, 0, 0, 255], names="Left", widths=3), static=True)
-    rr.log("lr_beliefs/right", rr.SeriesLines(colors=[0, 255, 0, 255], names="Right", widths=3), static=True)
-    rr.log("lr_beliefs/uncertain", rr.SeriesLines(colors=[0, 0, 255, 255], names="Uncertain", widths=3), static=True)
 
     for timestep in range(len(rgb_video)):
         rr.set_time(timeline = "frame", sequence = timestep)
@@ -321,24 +279,13 @@ def rerun_jtap_single_run(
             else:
                 rr.log("jtap/grid_points", rr.Clear(recursive=True))
 
-        rr.log("inferred_speed/", 
-            rr.BarChart(
-                values = speed_bin_counts[timestep],
-                # labels = speed_bin_centers
-            )
+        # Log LR beliefs as bar chart
+        # lr_raw_beliefs shape: (T, 3) where indices are [left, right, uncertain]
+        # Based on get_lr_raw_beliefs, index 0=left, 1=right, 2=uncertain
+        lr_values = lr_raw_beliefs[timestep]  # shape: (3,)
+        rr.log("lr_beliefs/", 
+            rr.BarChart(values=lr_values)
         )
-        
-        rr.log("inferred_direction/", 
-            rr.BarChart(
-                values = direction_bin_counts[timestep],
-                # labels = direction_bin_centers
-            )
-        )
-
-        # Log RG beliefs as line series over time
-        rr.log("lr_beliefs/left", rr.Scalars(lr_raw_beliefs[timestep, 1]))  # Left is index 1
-        rr.log("lr_beliefs/right", rr.Scalars(lr_raw_beliefs[timestep, 0]))  # Right is index 0
-        rr.log("lr_beliefs/uncertain", rr.Scalars(lr_raw_beliefs[timestep, 2]))  # Uncertain is index 2
         
         # Format ESS information
         ess_text = f"__{ESS_over_time[timestep]:.2f}__" if ESS_over_time[timestep] <= ESS_threshold else f"{ESS_over_time[timestep]:.2f}"
@@ -389,7 +336,12 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
     generate_samples_vmap = jax.vmap(generate_samples, in_axes = (0,None,0,0))
 
     if prediction_t_offset is None:
-        prediction_t_offset = JTAPMice_data.params.max_prediction_steps
+        # Handle case where max_prediction_steps might be an array (for multiple runs)
+        max_pred_steps = JTAPMice_data.params.max_prediction_steps
+        if isinstance(max_pred_steps, (list, np.ndarray)):
+            prediction_t_offset = max_pred_steps[0] if len(max_pred_steps) > 0 else max_pred_steps
+        else:
+            prediction_t_offset = max_pred_steps
 
     max_line_alpha = 1 # should always be 1, makes no sense to have alpha > 1
     min_line_alpha = min_line_alpha
@@ -401,7 +353,12 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
         num_inference_steps = JTAPMice_data.inference.weight_data.final_weights.shape[0]
     else:
         num_inference_steps = num_t_steps
-    num_prediction_steps = JTAPMice_data.params.max_prediction_steps
+    # Handle case where max_prediction_steps might be an array (for multiple runs)
+    max_pred_steps = JTAPMice_data.params.max_prediction_steps
+    if isinstance(max_pred_steps, (list, np.ndarray)):
+        num_prediction_steps = max_pred_steps[0] if len(max_pred_steps) > 0 else max_pred_steps
+    else:
+        num_prediction_steps = max_pred_steps
     max_inference_T = num_inference_steps - 1
     maxt = obs_arrays.shape[0]
     n_particles = JTAPMice_data.params.num_particles
@@ -462,7 +419,7 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
         gs = GridSpec(12, 12, figure=fig)
         ax1 = fig.add_subplot(gs[:7, :7])
         ax2 = fig.add_subplot(gs[1:6, 8:]) 
-        ax3 = fig.add_subplot(gs[8:, :7], projection = 'polar')
+        ax3 = fig.add_subplot(gs[8:, :7])  # Changed from polar to regular plot
         ax4 = fig.add_subplot(gs[8:, 8:])  
     else:
         fig = plt.figure(figsize=(10,5))
@@ -512,6 +469,9 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
 
     # AX2
     lr_data = get_lr_raw_beliefs(JTAPMice_data, prediction_t_offset)
+    # Handle both single run (shape: T, 3) and multiple runs (shape: N, T, 3)
+    if lr_data.ndim == 3:
+        lr_data = lr_data[0]  # Take first run if multiple runs
     bars = ax2.bar(range(3), lr_data[0], color = ['green', 'red', 'blue'])
 
     # Set up the axis limits
@@ -522,51 +482,56 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
     ax2.set_ylim(0, 1)
 
     if show_latents:
-        # AX3
-        num_bins = 90
+        # AX3: Direction bar chart (left vs right only)
+        # Direction values are -1.0 (left) and 1.0 (right)
         n_samples = 10000
-        max_count = 10
         viz_key, dir_key = jax.random.split(viz_key, 2)
         dir_keys = jax.random.split(dir_key, num_inference_steps)
-        sampled_dir = generate_samples_vmap(dir_keys, 10000, JTAPMice_data.inference.tracking.direction[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
-        all_counts_dir = []
-        # NOTE: IN THIS VIZ, STEP DIR IS TAKEN  a step before current step
-        for i in range(max_inference_T_for_video + 1):
-            counts_dir, bin_edges_dir = np.histogram(sampled_dir[i], bins=num_bins, range=(-np.pi, np.pi), density=True)
-            # rescale to sqrt of counts for it to be compatible with volume of pie histogram
-            counts_dir = np.sqrt(counts_dir)
-            all_counts_dir.append(counts_dir * (max_count / max(counts_dir)))
-
-        bin_centers = (bin_edges_dir[:-1] + bin_edges_dir[1:]) / 2
+        sampled_dir = generate_samples_vmap(dir_keys, n_samples, JTAPMice_data.inference.tracking.direction[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
         
-        # Plot the histogram on the polar plot
-        dir_bars = ax3.bar(bin_centers, all_counts_dir[0], width=bin_edges_dir[1] - bin_edges_dir[0], bottom=0, color='brown', edgecolor=None, alpha=0.6)
-        ax3.grid(False)
-        ax3.set_title('Direction (' + r'$\phi$' +')')
-        ax3.set_ylim(0, max_count)
-        ax3.set_yticklabels([])
-        ax3.set_theta_zero_location("E")
-        ax3.set_theta_direction(1)
-        ax3.set_xticklabels(['0°', '45°', '90°', '135°', '±180°', '-135°', '-90°', '-45°'])
+        # Compute probabilities for left (-1.0) and right (1.0) for each timestep
+        all_dir_probs = []
+        for i in range(max_inference_T_for_video + 1):
+            left_count = np.sum(sampled_dir[i] == -1.0)
+            right_count = np.sum(sampled_dir[i] == 1.0)
+            total = left_count + right_count
+            if total > 0:
+                left_prob = left_count / total
+                right_prob = right_count / total
+            else:
+                left_prob = 0.0
+                right_prob = 0.0
+            all_dir_probs.append(np.array([left_prob, right_prob]))
+        
+        # Plot direction as bar chart with two bars: Left and Right
+        dir_bars = ax3.bar(range(2), all_dir_probs[0], color=['blue', 'red'], alpha=0.6, edgecolor=None)
+        ax3.set_title('Direction')
+        ax3.set_xticks(range(2))
+        ax3.set_xticklabels(['Left (-1.0)', 'Right (1.0)'])
+        ax3.set_ylim(0, 1)
+        ax3.set_ylabel('Probability')
 
-       # AX4
-        num_bins = int(inference_input.max_speed/ 0.1) + 1
+        # AX4: Speed bar chart
+        num_bins = int(inference_input.max_speed / 0.1) + 1
         n_samples = 10000
         max_count = 10
         viz_key, speed_key = jax.random.split(viz_key, 2)
         speed_keys = jax.random.split(speed_key, num_inference_steps)
-        sampled_speed = generate_samples_vmap(speed_keys, 10000, JTAPMice_data.inference.tracking.speed[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
+        sampled_speed = generate_samples_vmap(speed_keys, n_samples, JTAPMice_data.inference.tracking.speed[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
         all_counts_speed = []
-        # NOTE: IN THIS VIZ, STEP SPEED IS TAKEN  a step before current step
+        all_bin_edges_speed = []
+        # NOTE: IN THIS VIZ, STEP SPEED IS TAKEN a step before current step
         for i in range(max_inference_T_for_video + 1):
             counts_speed, bin_edges_speed = np.histogram(sampled_speed[i], bins=num_bins, range=(0, inference_input.max_speed), density=True)
-            all_counts_speed.append(counts_speed * (max_count / sum(counts_speed)))
+            all_counts_speed.append(counts_speed * (max_count / sum(counts_speed)) if sum(counts_speed) > 0 else counts_speed)
+            all_bin_edges_speed.append(bin_edges_speed)
 
-        bin_centers = (bin_edges_speed[:-1] + bin_edges_speed[1:]) / 2
-        speed_bars = ax4.bar(bin_centers, all_counts_speed[0], width=bin_edges_speed[1] - bin_edges_speed[0], bottom=0, color='orange', edgecolor=None, alpha=0.6)
-        # ax4.grid(False)
+        bin_centers = (all_bin_edges_speed[0][:-1] + all_bin_edges_speed[0][1:]) / 2
+        bin_width = all_bin_edges_speed[0][1] - all_bin_edges_speed[0][0]
+        speed_bars = ax4.bar(bin_centers, all_counts_speed[0], width=bin_width, bottom=0, color='orange', edgecolor=None, alpha=0.6)
         ax4.set_title('Speed (' + r'$\nu$' +')')
         ax4.set_ylim(0, max_count)
+        ax4.set_xlabel('Speed')
         ax4.set_yticks([])    
         ax4.set_yticklabels([])
 
@@ -609,8 +574,10 @@ def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), predi
             for bar, height in zip(bars, lr_data[idx]):
                 bar.set_height(height)
             if show_latents:
-                for bar, height in zip(dir_bars, all_counts_dir[idx]):
+                # Update direction bars (left and right probabilities)
+                for bar, height in zip(dir_bars, all_dir_probs[idx]):
                     bar.set_height(height)
+                # Update speed bars
                 for bar, height in zip(speed_bars, all_counts_speed[idx]):
                     bar.set_height(height)
 
