@@ -32,6 +32,8 @@ def load_left_right_stimulus(
 ):
     """
     Loads a left-right (or mice) stimulus. For new "mice" multi-trial JSONs, supply trial_number.
+    Applies temporal downsampling (frame skipping) via skip_t to all frame-wise arrays.
+    fps ALWAYS remains the original fps (NOT downsampled fps in structure).
     """
     # Only support the new-style JSON with trial structure
     if not (os.path.isfile(stimulus_path) and stimulus_path.endswith('.json')):
@@ -45,12 +47,8 @@ def load_left_right_stimulus(
 
     # ---- Extraction from JSON, following example lr_v1.json ----
     # Top level: {"config": {...}, "trial_data": { "1": [...], ... } }
-    # config expected keys (from the example): scene_width inferred from scene_length, fps, diameter, scene_height (maybe), etc.
     config = all_trials_data["config"]
 
-    # Find the field for trial_data (called "trial_data", not "trials")
-    # The trial keys in "trial_data" are string integers starting at "1"
-    # incoming trial_number is intended to be 1-based (e.g., 1, 2, ...)
     trial_key = str(trial_number)
     if "trial_data" not in all_trials_data:
         raise ValueError(f"JSON is missing 'trial_data' key. Found keys: {list(all_trials_data.keys())}")
@@ -58,7 +56,7 @@ def load_left_right_stimulus(
     if trial_key not in trial_data_dict:
         raise ValueError(f"Trial {trial_key} not found in 'trial_data' in stimulus file.")
 
-    positions = np.asarray(trial_data_dict[trial_key], dtype=np.float32)
+    positions = np.asarray(trial_data_dict[trial_key], dtype=np.float32) 
     # positions shape (T,), represents X coordinates per frame
 
     # Name: same format as before, use file name + trial number
@@ -67,45 +65,51 @@ def load_left_right_stimulus(
     # Use info from config - all required keys should exist per lr_v1.json
     # scene_length is called "LEFT_RIGHT_LENGTH" in lr_v1.json, see example
     # diameter is called "SPEED" (probably not), so use a fallback or a default if not present
-    # scene_height is NOT present in example, so set to fixed (e.g., 1.0 or 20.0)
     scene_length = float(config["LEFT_RIGHT_LENGTH"])
     fps = int(config["FRAMES_PER_SECOND"])
-    # The "diameter" is not in config in the lr_v1.json example. Set a reasonable default if not present.
     diameter = 1.0
     scene_width = scene_length
     # scene_height MAY not exist, so set to a default value
     scene_height = diameter
-    # Y is always centered vertically for this setup
+    ball_bottom_y = 0.0
     ball_center_y = diameter / 2.0
 
-    ground_truth_positions = np.stack([positions, np.full_like(positions, ball_center_y)], axis=1)
+    # construct ground_truth_positions (T, 2): [x, y=ball_bottom_y]
+    ground_truth_positions_full = np.stack([positions - (diameter/2.0), np.full_like(positions, ball_bottom_y)], axis=1)
 
     # is_switching is not in lr_v1.json's trial_data, so set to False unless inference needed (not available in current JSON)
-    # Determine if the trial is a "switching" trial by checking whether the ball changes direction.
-    # We estimate this by checking the sign of velocity (finite differencing; switching if any sign change).
+    # Check switching BEFORE skip, based on original positions
     if len(positions) > 1:
         velocities = np.diff(positions)
-        # Find where the sign changes (i.e., product of neighboring velocities < 0)
         sign_changes = np.where(np.diff(np.sign(velocities)) != 0)[0]
         is_switching_trial = len(sign_changes) > 0
     else:
         is_switching_trial = False
     is_occlusion_trial = False
-    partially_occluded_bool = np.zeros(len(positions), dtype=bool)
-    fully_occluded_bool = np.zeros(len(positions), dtype=bool)
+
+    # FULL per-frame arrays (frame-count == positions.shape[0])
+    partially_occluded_bool_full = np.zeros(len(positions), dtype=bool)
+    fully_occluded_bool_full = np.zeros(len(positions), dtype=bool)
+
+    # Apply ::skip_t everywhere
+    positions_sub = positions[::skip_t]
+    ground_truth_positions = ground_truth_positions_full[::skip_t]
+    partially_occluded_bool = partially_occluded_bool_full[::skip_t]
+    fully_occluded_bool = fully_occluded_bool_full[::skip_t]
 
     rgb_frames, discrete_obs = create_mice_video_from_positions(
-        positions=positions,
+        positions=positions_sub,
         scene_width=scene_width,
         scene_height=scene_height,
         diameter=diameter,
         pixel_density=pixel_density,
-        skip_t=skip_t,
+        skip_t=1,  # already applied skip_t to positions, so pass-through 1 here
         ball_center_y=ball_center_y,
     )
     num_frames = len(rgb_frames)
 
     mouse_data = None
+
     if rgb_only:
         return rgb_frames
     else:
@@ -140,6 +144,7 @@ def create_mice_video_from_positions(
     Create video and discrete_obs for the 'mice' left-right type stimulus.
     - positions are X locations of the BALL CENTER.
     - Y will be constant and centered unless specified.
+    skip_t in this function should always be 1; frame skipping should be done before passing to this function.
     """
     # Quantize dimensions
     frame_width = int(np.round(scene_width * pixel_density))

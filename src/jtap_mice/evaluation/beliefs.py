@@ -189,7 +189,7 @@ def jtap_compute_beliefs(_jtap_mice_data_, pred_len = None, decay_T = 20, partia
         # get decaying beliefs
         decaying_beliefs = jtap_baseline_beliefs(model_beliefs, occlusion_bool, decay_T)
         
-        JTAPMice_Beliefs = JTAPMice_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_mice_data_.num_jtap_runs)
-        return JTAPMice_Beliefs
+        jtap_mice_beliefs = JTAPMice_Beliefs(model_beliefs = model_beliefs, frozen_beliefs = frozen_beliefs, decaying_beliefs = decaying_beliefs, num_jtap_runs = _jtap_mice_data_.num_jtap_runs)
+        return jtap_mice_beliefs
     else:
         raise ValueError(f"Unsupported type: {type(_jtap_mice_data_)}, supported types are JTAPMiceData")

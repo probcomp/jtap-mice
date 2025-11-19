@@ -225,6 +225,10 @@ def interpretable_belief_viz(JTAPMice_data, high_res_video, prediction_t_offset=
     # If no specific ax/timeframe is requested, raise an error
     raise ValueError("You must specify both ax_num and timeframe to return a specific ax.")
 
+import cv2
+from PIL import Image
+import numpy as np
+
 def draw_stimulus_image(
     jtap_stimulus,
     frame=0,
@@ -237,140 +241,218 @@ def draw_stimulus_image(
     marker_color=(255, 140, 0),  # more orange
     marker_radius=4,
     marker_border_thickness=1,
-    show_blue_dotted_ring=True  # NEW ARGUMENT
+    show_blue_dotted_ring=True,
+    do_not_draw_seconds=True,
+    offset_line_proportion_ball=0.25,
+    gradient_trajectory=True,
+    fade_older=False,
+    # --- New controls for user questions below:
+    arrow_length_px=6,        # Controls arrow length in pixels (before upscale)
+    arrow_thickness_px=None,   # Controls arrow thickness (None = automatic, else int)
+    gradient_extent=0.25,       # Controls how "extreme" the color gradient is, 0=constant color, 1=full spectrum
 ):
-    # Extract data from jtap_stimulus
+    """
+    Visualizes stimulus trajectory with customizable offset, color gradient, and arrow marker properties.
+
+    New args:
+    - arrow_length_px: Arrow base length (int, before upscale; e.g. 10 = original, 20 = longer, 5 = shorter).
+    - arrow_thickness_px: Arrow line thickness (int, before upscale; default auto).
+    - gradient_extent: Controls how intense the color gradient is (0.0 = uniform color, 1.0 = full HSV sweep).
+    """
+
+    # ---- Setups ----
     ground_truth_positions = jtap_stimulus.ground_truth_positions
     discrete_obs = jtap_stimulus.discrete_obs
     stimulus_fps = jtap_stimulus.fps
     skip_t = jtap_stimulus.skip_t
 
-    # Use provided FPS or default to stimulus FPS
     if FPS is None:
         FPS = stimulus_fps
 
-    # Calculate effective FPS accounting for skipped frames
     effective_fps = stimulus_fps / skip_t
 
-    # Convert discrete observation to RGB for the specified frame using the existing function
-    frame_discrete_obs = discrete_obs[frame:frame + 1]  # Keep batch dimension for function
-    rgb_frame = discrete_obs_to_rgb(frame_discrete_obs)[0]  # Get first (and only) frame
+    frame_discrete_obs = discrete_obs[frame:frame + 1]
+    rgb_frame = discrete_obs_to_rgb(frame_discrete_obs)[0]
 
     upscale_factor = 4
     original_height, original_width = rgb_frame.shape[:2]
     upscale_height, upscale_width = original_height * upscale_factor, original_width * upscale_factor
     high_res_image = cv2.resize(rgb_frame, (upscale_width, upscale_height), interpolation=cv2.INTER_NEAREST)
 
-    # Get diameter, pixel_density, and image_height for uv conversion
     diameter = getattr(jtap_stimulus, "diameter", 1)
-    pixel_density = getattr(jtap_stimulus, "pixel_density", 1)
+    pixel_density = getattr(jtap_stimulus, "pixel_density", 10)
     image_height = original_height
+    offset_ballunits = diameter * offset_line_proportion_ball
+    offset_pixels = offset_ballunits * pixel_density * upscale_factor
 
-    # xy_to_uv as in jtap_viz.py (no upscaling!)
-    xy_to_uv = lambda x, y: (
-        (x + 0.5 * diameter) * pixel_density,
-        image_height - ((y + 0.5 * diameter) * pixel_density)
-    )
-
-    # Convert ground truth positions to pdata format for compatibility
-    pdata = {}
-    for i, (x, y) in enumerate(ground_truth_positions):
-        pdata[i] = {'x': x, 'y': y}
-
-    sorted_frames = sorted(pdata.keys())
-
-    # Draw trajectory - in original pixel coordinates, then upscale
-    for i in range(1, len(sorted_frames)):
-        prev_frame = sorted_frames[i - 1]
-        current_frame = sorted_frames[i]
-
-        # Convert world coordinates to image coordinates using xy_to_uv
-        x1_uv, y1_uv = xy_to_uv(pdata[prev_frame]['x'], pdata[prev_frame]['y'])
-        x2_uv, y2_uv = xy_to_uv(pdata[current_frame]['x'], pdata[current_frame]['y'])
-
-        # Upscale for high res image
-        x1 = x1_uv * upscale_factor
-        y1 = y1_uv * upscale_factor
-        x2 = x2_uv * upscale_factor
-        y2 = y2_uv * upscale_factor
-
-        # Draw line segment for the trajectory
-        cv2.line(
-            high_res_image,
-            (int(round(x1)), int(round(y1))),
-            (int(round(x2)), int(round(y2))),
-            line_color,
-            int(line_thickness * upscale_factor),  # Adjust thickness for high resolution
-            lineType=cv2.LINE_AA
+    def xy_to_uv(x, y):
+        return (
+            (x + (0.5 * diameter)) * pixel_density,
+            image_height - ((y + (0.5 * diameter)) * pixel_density)
         )
 
-    def find_clear_position(img, x, y, text, search_radius=20):
-        """Find a nearby position that avoids dark pixels, considering text size."""
-        h, w, _ = img.shape
-        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, int(font_thickness * upscale_factor))[0]
+    # -- Prepare trajectory positions (with offset) and directions --
+    positions_xy = np.array(ground_truth_positions)
+    n_traj = len(positions_xy)
+    xs, ys = positions_xy[:,0], positions_xy[:,1]
 
-        for r in range(1, search_radius):
-            for dx, dy in [(-r, 0), (r, 0), (0, -r), (0, r)]:
-                nx, ny = int(x + dx), int(y + dy)
-                x_end, y_end = nx + (text_size[0] + 3), ny - (text_size[1] + 3)
+    # Compute direction: +1 (right), -1 (left), 0 (constant)
+    dx = np.diff(xs)
+    direction = np.zeros_like(xs)
+    direction[1:] = np.sign(dx)
+    # Set the first direction to the first nonzero, if needed
+    for i, d in enumerate(direction[1:], 1):
+        if d != 0:
+            direction[0] = d
+            break
 
-                if 0 <= nx < w and 0 <= ny < h and 0 <= x_end < w and 0 <= y_end < h:
-                    # Check if the entire text bounding box avoids dark pixels
-                    region = img[ny - (text_size[1] + 3):ny, nx:x_end]
-                    if not np.any(np.all(region < 27, axis=-1)):
-                        return nx, ny
-        return x, y  # Default to the original position if no clear spot is found
+    # -- Get all points for original and offset line --
+    offset_sign = 1
+    points_main = []
+    points_offset = []
+    for x, y in positions_xy:
+        xuv, yuv = xy_to_uv(x, y)
+        points_main.append((xuv * upscale_factor, yuv * upscale_factor))
+        points_offset.append((xuv * upscale_factor, (yuv + offset_sign * offset_pixels / upscale_factor) * upscale_factor))
 
-    # Annotate seconds on the trajectory, accounting for effective FPS
-    frames_per_second_annotation = effective_fps
+    # -------------- Trajectory Color/Alpha Utilities with Modifiable Gradient ---------------
+    def color_gradient(i, N):
+        if not gradient_trajectory or gradient_extent <= 0:
+            return line_color
+        # Less extreme gradient: restrict hue swing to [0, 255 * gradient_extent]
+        # gradient_extent=1.0: full HSV, 0.5: half of hue scale, 0=no grad.
+        hue_swing = int(255 * float(gradient_extent))
+        hue = int(hue_swing * i / max(1, N))
+        sat = 255
+        val = 255
+        hsv = np.uint8([[[hue, sat, val]]])
+        rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0,0]
+        return tuple(int(x) for x in rgb)
 
-    # Instead of looping over existing frames only, compute exact whole seconds,
-    # and interpolate if the annotation frame doesn't land exactly on an existing frame.
-    max_time_seconds = (max(sorted_frames)) / effective_fps
-    num_whole_seconds = int(np.floor(max_time_seconds)) + 1  # Ensure we include last second if possible
+    def alpha_for_segment(i, N):
+        if not fade_older:
+            return 1.0
+        min_alpha = 0.25
+        max_alpha = 1.0
+        fade_frac = i / max(1, N)
+        return min_alpha + (max_alpha - min_alpha) * fade_frac
 
-    for s in range(num_whole_seconds):
-        # Compute the (possibly non-integer) frame that corresponds to this whole second.
-        target_frame = s * effective_fps
-        text = str(s)
+    # ------ Find direction-flip indexes ------
+    def get_direction_flip_indices(direction):
+        flips = []
+        for i in range(1, len(direction)):
+            if direction[i-1] != 0 and direction[i] != 0 and direction[i] != direction[i-1]:
+                flips.append(i)
+        return flips
+    flip_indices = get_direction_flip_indices(direction)
 
-        # Find nearest frames before and after the target
-        frame_before = int(np.floor(target_frame))
-        frame_after = int(np.ceil(target_frame))
+    # ------ Draw Trajectory ------
+    for i in range(1, n_traj):
+        color = color_gradient(i-1, n_traj-1)
+        alpha = alpha_for_segment(i-1, n_traj-1)
 
-        if frame_before == frame_after and frame_before in pdata:
-            # Exact frame exists
-            interp_x = pdata[frame_before]['x']
-            interp_y = pdata[frame_before]['y']
-            point_frame = frame_before
-        elif frame_before in pdata and frame_after in pdata and frame_before != frame_after:
-            # Interpolate position
-            x0, y0 = pdata[frame_before]['x'], pdata[frame_before]['y']
-            x1_, y1_ = pdata[frame_after]['x'], pdata[frame_after]['y']
-            t = (target_frame - frame_before) / (frame_after - frame_before)
-            interp_x = x0 + t * (x1_ - x0)
-            interp_y = y0 + t * (y1_ - y0)
-            # For purposes of frame match, choose the nearest int
-            point_frame = frame_before if abs(target_frame - frame_before) < abs(target_frame - frame_after) else frame_after
-        elif frame_before in pdata:
-            interp_x = pdata[frame_before]['x']
-            interp_y = pdata[frame_before]['y']
-            point_frame = frame_before
-        elif frame_after in pdata:
-            interp_x = pdata[frame_after]['x']
-            interp_y = pdata[frame_after]['y']
-            point_frame = frame_after
+        d = direction[i]
+        d_prev = direction[i-1]
+        line_on_offset = d != 0 and d > 0
+
+        if line_on_offset:
+            pt1 = points_offset[i-1]
+            pt2 = points_offset[i]
         else:
-            # Can't plot this second, skip
-            continue
+            pt1 = points_main[i-1]
+            pt2 = points_main[i]
 
-        # Convert (interp_x, interp_y) to (uv) using xy_to_uv, then upscale
-        x_uv, y_uv = xy_to_uv(interp_x, interp_y)
-        x = x_uv * upscale_factor
-        y = y_uv * upscale_factor
+        if alpha >= 0.999:
+            cv2.line(
+                high_res_image,
+                (int(round(pt1[0])), int(round(pt1[1]))),
+                (int(round(pt2[0])), int(round(pt2[1]))),
+                color,
+                int(line_thickness * upscale_factor),
+                lineType=cv2.LINE_AA,
+            )
+        else:
+            temp = high_res_image.copy()
+            cv2.line(
+                temp,
+                (int(round(pt1[0])), int(round(pt1[1]))),
+                (int(round(pt2[0])), int(round(pt2[1]))),
+                color,
+                int(line_thickness * upscale_factor),
+                lineType=cv2.LINE_AA,
+            )
+            cv2.addWeighted(temp, alpha, high_res_image, 1 - alpha, 0, dst=high_res_image)
 
-        # Draw a marker (circle) at each second's ball center location
-        # First, draw a contrasting border (e.g., black) for visibility
+        if i in flip_indices:
+            if d_prev > 0:
+                p_from = points_offset[i-1]
+                p_to = points_main[i]
+            else:
+                p_from = points_main[i-1]
+                p_to = points_offset[i]
+            cv2.line(
+                high_res_image,
+                (int(round(p_from[0])), int(round(p_from[1]))),
+                (int(round(p_to[0])), int(round(p_to[1]))),
+                (64,64,64),
+                int(line_thickness * upscale_factor) + 1,
+                lineType=cv2.LINE_AA,
+            )
+
+    # ------ Draw markers/arrows on corresponding line ------
+    def get_tick_points_and_colors():
+        frames_per_second_annotation = effective_fps
+        max_time_seconds = (n_traj-1) / effective_fps
+        num_whole_seconds = int(np.floor(max_time_seconds)) + 1
+        ticks = []
+        for s in range(num_whole_seconds):
+            target_frame = s * effective_fps
+            frame_before = int(np.floor(target_frame))
+            frame_after = int(np.ceil(target_frame))
+            if frame_before == frame_after and frame_before < n_traj:
+                t = 0
+                use_frame = frame_before
+            elif frame_before < n_traj and frame_after < n_traj and frame_before != frame_after:
+                x0, y0 = xs[frame_before], ys[frame_before]
+                x1_, y1_ = xs[frame_after], ys[frame_after]
+                t = (target_frame - frame_before) / (frame_after - frame_before)
+                use_frame = frame_before if abs(target_frame-frame_before)<abs(target_frame-frame_after) else frame_after
+            elif frame_before < n_traj:
+                t = 0
+                use_frame = frame_before
+            elif frame_after < n_traj:
+                t = 0
+                use_frame = frame_after
+            else:
+                continue
+
+            if frame_before < n_traj and frame_after < n_traj:
+                interp_x = xs[frame_before] * (1-t) + xs[frame_after] * t
+                interp_y = ys[frame_before] * (1-t) + ys[frame_after] * t
+                interp_idx = int(round(target_frame))
+            else:
+                interp_x = xs[use_frame]
+                interp_y = ys[use_frame]
+                interp_idx = use_frame
+            d = direction[interp_idx]
+            line_on_offset = d != 0 and d > 0
+            if line_on_offset:
+                xuv, yuv = xy_to_uv(interp_x, interp_y)
+                yuv_off = yuv + offset_sign * offset_pixels / upscale_factor
+                pt = (xuv * upscale_factor, yuv_off * upscale_factor)
+            else:
+                xuv, yuv = xy_to_uv(interp_x, interp_y)
+                pt = (xuv * upscale_factor, yuv * upscale_factor)
+            color = color_gradient(s, num_whole_seconds-1 if num_whole_seconds>1 else 1)
+            ticks.append({"pt": pt, "color": color, "interp_idx": interp_idx, "second": s, "line_on_offset": line_on_offset})
+        return ticks
+
+    ticks = get_tick_points_and_colors()
+
+    for tick in ticks:
+        x, y = tick["pt"]
+        marker_c = tick["color"]
+
         cv2.circle(
             high_res_image,
             (int(round(x)), int(round(y))),
@@ -379,36 +461,53 @@ def draw_stimulus_image(
             thickness=-1,
             lineType=cv2.LINE_AA
         )
-        # Inner colored marker
         cv2.circle(
             high_res_image,
             (int(round(x)), int(round(y))),
             int(marker_radius * upscale_factor // 4),
-            marker_color,
+            marker_c,
             thickness=-1,
             lineType=cv2.LINE_AA
         )
 
-        # Draw blue dotted ring if requested, but DO NOT for the rendered frame itself
-        if show_blue_dotted_ring and (point_frame != frame):
-            # Use jtap_stimulus.diameter (which is the BALL DIAMETER in world units)
+        # --- Draw an arrow at this marker ---
+        interp_idx = tick["interp_idx"]
+        d = direction[interp_idx]
+        # Use arrow_length_px for visual arrow size (in original px before upscaling)
+        arrow_length = arrow_length_px * upscale_factor
+        if arrow_thickness_px is not None:
+            arrow_thickness = int(arrow_thickness_px * upscale_factor)
+        else:
+            arrow_thickness = max(1, marker_radius * upscale_factor // 6)
+        angle = 0 if d >= 0 else np.pi  # Right (0 degrees) if d>=0 else left (180 deg)
+        dx_arrow = np.cos(angle) * arrow_length * 0.5
+        dy_arrow = 0
+        tail_x = int(round(x - dx_arrow))
+        tip_x = int(round(x + dx_arrow))
+        tail_y = tip_y = int(round(y + dy_arrow))
+        cv2.arrowedLine(
+            high_res_image,
+            (tail_x, tail_y),
+            (tip_x, tip_y),
+            marker_c,
+            arrow_thickness,
+            tipLength=0.38,
+            line_type=cv2.LINE_AA if hasattr(cv2, 'LINE_AA') else 8
+        )
+
+        # Blue dotted ring (optional, skip if frame==tick idx)
+        if show_blue_dotted_ring and (tick["second"] != frame):
             ball_diameter_world = getattr(jtap_stimulus, 'diameter', None)
             if ball_diameter_world is not None:
-                # BALL RADIUS in original image pixels (NO upscaling here)
                 ball_radius_pixels = (ball_diameter_world / 2.0) * pixel_density
             else:
-                # fallback: make the ring equal to marker radius in the original image
                 ball_radius_pixels = marker_radius
-
             ring_radius = int(round(ball_radius_pixels * upscale_factor))
-            ring_color = (0, 0, 255)  # OpenCV: BGR (pure blue)
-
-            # Make the ring thicker and more visible for larger ball radii
-            num_dots = min(16, int(2 * np.pi * ring_radius / 3))  # Dots every ~3px
+            ring_color = (0, 0, 255)  # BGR
+            num_dots = min(16, int(2 * np.pi * ring_radius / 3))
             dot_radius = 1
-
-            for i in range(num_dots):
-                theta = 2 * np.pi * i / num_dots
+            for i_dot in range(num_dots):
+                theta = 2 * np.pi * i_dot / num_dots
                 cx = int(round(x + ring_radius * np.cos(theta)))
                 cy = int(round(y + ring_radius * np.sin(theta)))
                 cv2.circle(
@@ -420,25 +519,33 @@ def draw_stimulus_image(
                     lineType=cv2.LINE_AA
                 )
 
-        # Find a clear position to place the text
-        x_clear, y_clear = find_clear_position(high_res_image, x, y - 15, text)
-        y_adjust = 0
+        if not do_not_draw_seconds:
+            def find_clear_position(img, x, y, text, search_radius=20):
+                h, w, _ = img.shape
+                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, int(font_thickness * upscale_factor))[0]
+                for r in range(1, search_radius):
+                    for dx, dy in [(-r, 0), (r, 0), (0, -r), (0, r)]:
+                        nx, ny = int(x + dx), int(y + dy)
+                        x_end, y_end = nx + (text_size[0] + 3), ny - (text_size[1] + 3)
+                        if 0 <= nx < w and 0 <= ny < h and 0 <= x_end < w and 0 <= y_end < h:
+                            region = img[ny - (text_size[1] + 3):ny, nx:x_end]
+                            if not np.any(np.all(region < 27, axis=-1)):
+                                return nx, ny
+                return x, y
+            x_clear, y_clear = find_clear_position(high_res_image, x, y - 15, str(tick["second"]))
+            y_adjust = 0
+            cv2.putText(
+                high_res_image,
+                str(tick["second"]),
+                (int(x_clear), int(y_clear - y_adjust)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                text_color,
+                thickness=int(font_thickness * upscale_factor),
+                lineType=cv2.LINE_AA
+            )
 
-        # Annotate the frame number as seconds
-        cv2.putText(
-            high_res_image,
-            text,  # Time in seconds as text
-            (int(x_clear), int(y_clear - y_adjust)),  # Adjusted position
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,  # Larger font scale for high resolution
-            text_color,
-            thickness=int(font_thickness * upscale_factor),  # Adjust thickness for high resolution
-            lineType=cv2.LINE_AA
-        )
-
-    # Convert to PIL Image
     pil_image = Image.fromarray(high_res_image)
-
     return pil_image
 
 def plot_proposal_direction_outlier_pdf(
