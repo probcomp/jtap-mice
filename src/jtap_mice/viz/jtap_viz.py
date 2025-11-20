@@ -56,16 +56,12 @@ def stack_tracking_and_predictions(tracking_x, prediction_x, sample_idx, pred_st
     n_frames = tracking_x.shape[0]
     n_sel_particles = len(sample_idx)
 
-    # Always pick the right particles up front
     tracking_x_sel = tracking_x[:, sample_idx]  # (n_frames, n_sel_particles)
     prediction_x_sel = prediction_x[:, :pred_steps_use, :][:, :, sample_idx]  # (n_frames, pred_steps_use, n_sel_particles)
-
-    # step 0 is tracking x at time t
-    # The rest are prediction_x
     pred_x_full = np.concatenate([tracking_x_sel[:, None, :], prediction_x_sel], axis=1)  # (n_frames, pred_steps_use+1, n_sel_particles)
     return pred_x_full
 
-def animate_jtap_predictions(
+def animate_jtap_mice_predictions(
     JTAPMICE_DATA, 
     pred_len=None, 
     jtap_run_idx=0, 
@@ -79,7 +75,8 @@ def animate_jtap_predictions(
     line_thick_min=2.7,
     line_thick_max=10.5,
     use_tqdm=True,
-    fps=10
+    fps=10,
+    return_html=True
 ):
     """
     Visualize particles, predictions, and left/right beliefs as an animated matplotlib figure.
@@ -92,6 +89,13 @@ def animate_jtap_predictions(
         return arr[jtap_run_idx] if arr.shape[0] > 1 else arr[0]
     inf = JTAPMICE_DATA.inference
 
+    scene_dim = JTAPMICE_DATA.params.inference_input.scene_dim
+    scene_dim = np.array(scene_dim)
+    if scene_dim.size > 0:
+        Wscene = float(np.ravel(scene_dim)[0])
+    else:
+        Wscene = 1.0
+
     tracking_x = np.array(_squeeze(inf.tracking.x))
     tracking_y = np.array(_squeeze(inf.tracking.y)) if hasattr(inf.tracking, "y") else None
     weights = np.array(_squeeze(inf.weight_data.final_weights))
@@ -101,13 +105,11 @@ def animate_jtap_predictions(
 
     num_frames, num_particles = tracking_x.shape
     pred_steps = prediction_x.shape[1]
-    # Use at most pred_len steps; fallback to all available steps otherwise. Always show tracking as step 0.
     plot_pred_steps = pred_len if (pred_len is not None and pred_len <= pred_steps) else pred_steps
     plot_pred_steps_with_track = plot_pred_steps + 1
 
     # We'll determine the sample idx first.
     if (max_particles_to_show is not None) and (num_particles > max_particles_to_show):
-        # Use only the top particles by initial (frame 0) final weights
         sample_idx = np.argsort(weights[0])[::-1][:max_particles_to_show]
     else:
         sample_idx = np.arange(num_particles)
@@ -189,10 +191,21 @@ def animate_jtap_predictions(
         linewidth=4, edgecolor='black', facecolor='none', zorder=2
     )
     ax_scene.add_patch(obs_border_rect)
+    # Compute the "forbidden"/barrier boundaries in scene space:
+    left_barrier_x = 0 + ball_radius_scene
+    right_barrier_x = Wscene - ball_radius_scene
+    # Add vertical dashed lines to ax_pred, to be updated later
+    left_barrier_line = ax_pred.axvline(
+        left_barrier_x, color='k', linestyle=':', linewidth=3, alpha=0.65, zorder=5, animated=True
+    )
+    right_barrier_line = ax_pred.axvline(
+        right_barrier_x, color='k', linestyle=':', linewidth=3, alpha=0.65, zorder=5, animated=True
+    )  # We'll set the xdata below
 
+    # Use orange lines for predictions instead of yellow
     lines = []
     for _ in range(len(sample_idx)):
-        line, = ax_pred.plot([], [], lw=line_thick_min, color='yellow', alpha=0.85, zorder=2)
+        line, = ax_pred.plot([], [], lw=line_thick_min, color='#FFD700', alpha=0.8, zorder=2)  # dark yellow
         lines.append(line)
     pred_dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=3, edgecolors='none', linewidths=0)
     bar_beliefs = ax_belief.bar(['Left', 'Right', 'Unc.'], [0, 0, 0], color=['#3399FF', '#FF9933', '#C0C0C0'])
@@ -200,21 +213,14 @@ def animate_jtap_predictions(
     ax_pred.set_xlabel('X pos')
     ax_pred.set_ylabel('Prediction step (future, 0=current, 1=+1 frame, ...)')
 
-    scene_dim = JTAPMICE_DATA.params.inference_input.scene_dim
-    scene_dim = np.array(scene_dim)
-    if scene_dim.size > 0:
-        Wscene = float(np.ravel(scene_dim)[0])
-    else:
-        Wscene = 1.0
-
     ax_pred.set_xlim(0, Wscene)
     ax_pred.set_ylim(-0.5, plot_pred_steps_with_track - 0.5)
     ax_pred.set_xticks(np.arange(0, int(np.ceil(Wscene)) + 1, 1))
     ax_pred.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
     y_tick_locs = np.arange(0, plot_pred_steps_with_track, 5)
-    if len(y_tick_locs) == 0 or y_tick_locs[-1] != plot_pred_steps_with_track - 1:
-        y_tick_locs = np.append(y_tick_locs, plot_pred_steps_with_track - 1)
+    # if len(y_tick_locs) == 0 or y_tick_locs[-1] != plot_pred_steps_with_track - 1:
+    #     y_tick_locs = np.append(y_tick_locs, plot_pred_steps_with_track - 1)
     y_tick_locs = np.unique(y_tick_locs)
     ax_pred.set_yticks(y_tick_locs)
     ax_pred.set_yticklabels([f"+{yy}" for yy in y_tick_locs])
@@ -251,6 +257,37 @@ def animate_jtap_predictions(
 
     anim_progress = {'bar': None, 'last_frame': -1}
 
+    def find_crossing(x_vals, y_vals, barrier_x, direction):
+        """
+        Find the segment where the prediction crosses the barrier (left or right).
+        Returns the index of first crossing, and the interpolated (x, y) of the crossing point.
+        """
+        xs = np.array(x_vals)
+        ys = np.array(y_vals)
+        for i in range(len(xs)-1):
+            if direction == "left":
+                if xs[i] > barrier_x and xs[i+1] <= barrier_x:
+                    # interpolate crossing point
+                    dx = xs[i+1] - xs[i]
+                    dy = ys[i+1] - ys[i]
+                    if dx == 0:
+                        alpha = 0
+                    else:
+                        alpha = (barrier_x - xs[i]) / dx
+                    cross_y = ys[i] + alpha * dy
+                    return i+1, barrier_x, cross_y
+            elif direction == "right":
+                if xs[i] < barrier_x and xs[i+1] >= barrier_x:
+                    dx = xs[i+1] - xs[i]
+                    dy = ys[i+1] - ys[i]
+                    if dx == 0:
+                        alpha = 0
+                    else:
+                        alpha = (barrier_x - xs[i]) / dx
+                    cross_y = ys[i] + alpha * dy
+                    return i+1, barrier_x, cross_y
+        return None
+
     def animate(t):
         if use_tqdm:
             if anim_progress['bar'] is None:
@@ -280,29 +317,84 @@ def animate_jtap_predictions(
         scn_dots.set_sizes(sizes_scn)
 
         # Now assemble predictions (including current tracking at step 0, then step 1 etc).
-        # pred_x_full: (num_frames, plot_pred_steps_with_track, n_sel_particles)
         xs_pred_t = pred_x_full[t] + ball_radius_scene  # (plot_pred_steps_with_track, n_sel_particles)
         ys_pred_t = np.arange(plot_pred_steps_with_track)[:, None] * np.ones((1, len(s_idx)))  # (plot_pred_steps_with_track, n_sel_particles)
 
-        # So that the dots always appear at proper y (fix bug for frame 0, dots offscreen)
         # For the scatter we want offset: (n_sel_particles, 2) - just step 0 (current time)
         pred_dots.set_offsets(np.stack([xs_pred_t[0], np.zeros_like(xs_pred_t[0])], axis=1))
         pred_dots.set_sizes(compute_dot_sizes(tw_samp, pred_dot_min_size, pred_dot_max_size))
 
         line_ws = compute_line_widths(tw_samp, line_thick_min, line_thick_max)
+
+        # For each displayed particle, mask its predictions if predicted ball *center* has reached a radius away from either barrier
         for li, p_idx in enumerate(range(len(s_idx))):
-            # For each displayed particle
-            xs_particle = xs_pred_t[:, li]
-            ys_particle = ys_pred_t[:, li]
-            # Compute masking like original: prediction_lr only covers steps after 0 (i.e. pred only, not tracking)
+            xs_particle = xs_pred_t[:, li]  # scene x-coords for all prediction steps (center of ball)
+            ys_particle = ys_pred_t[:, li]  # y steps
+
+            # We start with all points
+            idxs_to_draw = np.arange(len(xs_particle))
+
+            # We'll treat exclusion as: stop showing after prediction *reaches* or exceeds left_barrier_x or right_barrier_x
+            # Find if we cross the left or right barrier - interpolate if so
+            left_cross = find_crossing(xs_particle, ys_particle, left_barrier_x, direction="left")
+            right_cross = find_crossing(xs_particle, ys_particle, right_barrier_x, direction="right")
+
+            # Decide which barrier is hit first, if any
+            barrier_cut_idx = None
+            barrier_x = None
+            barrier_y = None
+            if left_cross and right_cross:
+                # Take the smaller index (whichever occurs first in the prediction steps)
+                if left_cross[0] <= right_cross[0]:
+                    barrier_cut_idx = left_cross[0]
+                    barrier_x = left_cross[1]
+                    barrier_y = left_cross[2]
+                else:
+                    barrier_cut_idx = right_cross[0]
+                    barrier_x = right_cross[1]
+                    barrier_y = right_cross[2]
+            elif left_cross:
+                barrier_cut_idx = left_cross[0]
+                barrier_x = left_cross[1]
+                barrier_y = left_cross[2]
+            elif right_cross:
+                barrier_cut_idx = right_cross[0]
+                barrier_x = right_cross[1]
+                barrier_y = right_cross[2]
+
+            xs_draw = xs_particle
+            ys_draw = ys_particle
+
+            if barrier_cut_idx is not None:
+                # Include up to step before crossing, and then add the crossing point
+                xs_draw = np.concatenate([xs_particle[:barrier_cut_idx], [barrier_x]])
+                ys_draw = np.concatenate([ys_particle[:barrier_cut_idx], [barrier_y]])
+                mask = np.zeros_like(xs_particle, dtype=bool)
+                mask[:barrier_cut_idx] = True
+                mask[barrier_cut_idx] = True
+            else:
+                mask = np.ones_like(xs_particle, dtype=bool)
+            
+            # Additionally, if you want to combine with old 'lr' boundary masking, do so as well:
             lrs = prediction_lr[t, :plot_pred_steps, s_idx[li]]
-            mask = np.ones(len(xs_particle), dtype=bool)
-            hits = np.where((lrs == 0) | (lrs == 1))[0]
-            if len(hits) > 0:
-                hit_idx = hits[0]
-                # after tracking step (step 0), so mask after hit_idx+1+1
-                mask[(hit_idx + 2):] = False
-            lines[li].set_data(xs_particle[mask], ys_particle[mask])
+            # But barrier check is strict, so we only mask if we hit barrier OR LR label
+            hit_lr_idx = None
+            hits_lr = np.where((lrs == 0) | (lrs == 1))[0]
+            # If double-mask, ensure we don't show more than either
+            if len(hits_lr) > 0:
+                hit_lr_idx = hits_lr[0]
+                lr_cut = hit_lr_idx + 2  # original logic
+                # Combine masks: shortest length
+                if barrier_cut_idx is not None:
+                    draw_len = min(lr_cut, len(xs_draw))
+                    xs_draw = xs_draw[:draw_len]
+                    ys_draw = ys_draw[:draw_len]
+                else:
+                    mask[lr_cut:] = False
+                    xs_draw = xs_draw[mask]
+                    ys_draw = ys_draw[mask]
+
+            lines[li].set_data(xs_draw, ys_draw)
             lines[li].set_linewidth(line_ws[li])
             lines[li].set_alpha(0.88)
 
@@ -319,10 +411,15 @@ def animate_jtap_predictions(
         ax_belief.set_title("LR belief:\nL={:.2f}, R={:.2f}, U={:.2f}".format(left_p, right_p, unc_p), fontsize=26)
         for ax in [ax_pred, ax_scene]:
             ax.set_title(ax.get_title().split('\n')[0] + f"\nframe {t + 1}/{num_frames}", fontsize=26)
-        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect]
+
+        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line]
 
     anim = animation.FuncAnimation(
         fig, animate, frames=num_frames, interval=(1000/fps), blit=True, repeat=True
     )
     plt.close()
-    return HTML(anim.to_jshtml())
+    
+    if return_html:
+        return HTML_Display(anim.to_html5_video())
+    else:
+        return HTML_Display(anim.to_jshtml())
