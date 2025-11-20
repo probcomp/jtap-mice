@@ -22,566 +22,307 @@ from jtap_mice.utils import discrete_obs_to_rgb, slice_pt
 from jtap_mice.inference import JTAPMiceData
 from jtap_mice.evaluation import compute_weight_component_correlations, get_lr_raw_beliefs
 
-def rerun_jtap_single_run(
-    JTAPMICE_DATA,
-    rgb_video_highres = None,
-    stimulus_name = 'jtap_single_runv0',
-    override_prediction_length = None,
-    tracking_dot_size_range = (1,5),
-    prediction_line_size_range = (1,5),
-    jtap_run_idx = None,
-    render_grid = False,
-    grid_dot_radius = 1.0,
-    show_velocity = False  # ADDED: show velocity arrows if True
+import matplotlib.pyplot as plt
+from matplotlib import animation
+import numpy as np
+import jax.numpy as jnp
+from IPython.display import HTML
+
+
+def compute_lr_beliefs_directly(jtap_inference, jtap_run_idx, pred_len, num_frames, num_particles):
+    pred_lr = jtap_inference.prediction.lr
+    weights = jtap_inference.weight_data.final_weights
+    arr_idx = jtap_run_idx if pred_lr.shape[0] > 1 else 0
+    pred_lr = pred_lr[arr_idx]
+    w = weights[arr_idx]
+    offset = pred_len if pred_len is not None else jtap_inference.prediction.x.shape[1]
+    idx = min(offset, pred_lr.shape[1]) - 1
+    coded_lr_hits = np.array(pred_lr[:, idx, :])
+    w = np.array(w)
+    normalized_probs = np.exp(w - np.max(w, axis=1, keepdims=True))
+    normalized_probs = normalized_probs / np.sum(normalized_probs, axis=1, keepdims=True)
+    left_probs = np.sum((coded_lr_hits == 0) * normalized_probs, axis=1)
+    right_probs = np.sum((coded_lr_hits == 1) * normalized_probs, axis=1)
+    uncertain_probs = np.sum((coded_lr_hits == 2) * normalized_probs, axis=1)
+    lr_belief_probs = np.stack([left_probs, right_probs, uncertain_probs], axis=1)
+    return lr_belief_probs
+
+def stack_tracking_and_predictions(tracking_x, prediction_x, sample_idx, pred_steps_use):
+    """ 
+    Returns array (n_frames, pred_steps_use+1, len(sample_idx))
+    """
+    tracking_x = np.array(tracking_x)  # (n_frames, n_particles)
+    prediction_x = np.array(prediction_x)  # (n_frames, pred_steps, n_particles)
+    n_frames = tracking_x.shape[0]
+    n_sel_particles = len(sample_idx)
+
+    # Always pick the right particles up front
+    tracking_x_sel = tracking_x[:, sample_idx]  # (n_frames, n_sel_particles)
+    prediction_x_sel = prediction_x[:, :pred_steps_use, :][:, :, sample_idx]  # (n_frames, pred_steps_use, n_sel_particles)
+
+    # step 0 is tracking x at time t
+    # The rest are prediction_x
+    pred_x_full = np.concatenate([tracking_x_sel[:, None, :], prediction_x_sel], axis=1)  # (n_frames, pred_steps_use+1, n_sel_particles)
+    return pred_x_full
+
+def animate_jtap_predictions(
+    JTAPMICE_DATA, 
+    pred_len=None, 
+    jtap_run_idx=0, 
+    image_scale=4, 
+    max_particles_to_show=None, 
+    stimulus=None,
+    scn_dot_min_size=32, 
+    scn_dot_max_size=210,
+    pred_dot_min_size=25, 
+    pred_dot_max_size=120,
+    line_thick_min=2.7,
+    line_thick_max=10.5,
+    use_tqdm=True,
+    fps=10
 ):
-    assert isinstance(JTAPMICE_DATA, JTAPMiceData)
-    
-    # Handle multiple runs
-    if JTAPMICE_DATA.num_jtap_runs > 1:
-        if jtap_run_idx is None:
-            print(f"Multiple JTAP runs detected ({JTAPMICE_DATA.num_jtap_runs} runs). No index provided, visualizing index 0 (first run).")
-            jtap_run_idx = 0
-        else:
-            if jtap_run_idx >= JTAPMICE_DATA.num_jtap_runs:
-                raise ValueError(f"jtap_run_idx {jtap_run_idx} is out of range. Available runs: 0 to {JTAPMICE_DATA.num_jtap_runs - 1}")
-    else:
-        jtap_run_idx = 0
-
-    # Local scoped imports
-    from scipy.special import logsumexp
-
-    # extract discrete obs
-    discrete_obs = JTAPMICE_DATA.stimulus.discrete_obs
-    rgb_video = discrete_obs_to_rgb(discrete_obs)
-
-    ###########################
-    # PRE-PROCESS JTAP DATA
-    ###########################
-
-    # Helper function to get indexed data
-    def get_run_data(data, run_idx=None):
-        """Extract data for a specific run if multiple runs exist"""
-        if JTAPMICE_DATA.num_jtap_runs > 1:
-            return slice_pt(data, run_idx)
-        return data
-
-    # Step 0: Get basic params
-    image_height = rgb_video.shape[1]
-    image_width = rgb_video.shape[2]
-    inference_input = JTAPMICE_DATA.params.inference_input
-    pixel_density = round(1/get_run_data(inference_input.image_discretization, jtap_run_idx))
-    diameter = get_run_data(inference_input.diameter, jtap_run_idx)
-    max_speed = get_run_data(inference_input.max_speed, jtap_run_idx)
-    ESS_over_time = get_run_data(JTAPMICE_DATA.inference.ESS, jtap_run_idx)
-    ESS_threshold = get_run_data(JTAPMICE_DATA.params.ESS_threshold, jtap_run_idx)
-    num_particles = get_run_data(JTAPMICE_DATA.params.num_particles, jtap_run_idx)
-    resampled_over_time = get_run_data(JTAPMICE_DATA.inference.resampled, jtap_run_idx)
-    simulate_every = get_run_data(JTAPMICE_DATA.params.simulate_every, jtap_run_idx)
-
-    # Step 1: Compute inference and prediction lengths
-    num_inference_steps = get_run_data(JTAPMICE_DATA.params.max_inference_steps, jtap_run_idx)
-    num_prediction_steps = get_run_data(JTAPMICE_DATA.params.max_prediction_steps, jtap_run_idx)
-    num_prediction_steps = num_prediction_steps if override_prediction_length is None else override_prediction_length
-
-    # Step 2: Extract inference/tracking data
-    weights = get_run_data(JTAPMICE_DATA.inference.weight_data.final_weights, jtap_run_idx)  # T by N_PARTICLES
-    tracking_x = get_run_data(JTAPMICE_DATA.inference.tracking.x, jtap_run_idx)  # T by N_PARTICLES
-    tracking_y = get_run_data(JTAPMICE_DATA.inference.tracking.y, jtap_run_idx)  # T by N_PARTICLES
-    tracking_direction = get_run_data(JTAPMICE_DATA.inference.tracking.direction, jtap_run_idx)  # T by N_PARTICLES
-    tracking_speed = get_run_data(JTAPMICE_DATA.inference.tracking.speed, jtap_run_idx)  # T by N_PARTICLES
-
-    # Step 2.5: Create prediction initialization arrays that freeze values every simulate_every timesteps
-    # This mimics how predictions are initialized from fixed reference states
-    block_indices = (np.arange(num_inference_steps) // simulate_every) * simulate_every  # T
-    pred_init_x = tracking_x[block_indices]  # T by N_PARTICLES
-    pred_init_y = tracking_y[block_indices]  # T by N_PARTICLES
-
-    # Step 3: Extract prediction data, and concat with tracking data
-    prediction_x = get_run_data(JTAPMICE_DATA.inference.prediction.x, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
-    prediction_y = get_run_data(JTAPMICE_DATA.inference.prediction.y, jtap_run_idx)  # T by num_prediction_steps by N_PARTICLES
-    prediction_x = jnp.concatenate([pred_init_x[:,None,:], prediction_x], axis = 1)  # T by num_prediction_steps+1 by N_PARTICLES
-    prediction_y = jnp.concatenate([pred_init_y[:,None,:], prediction_y], axis = 1)  # T by num_prediction_steps+1 by N_PARTICLES
-
-    # Step 4: Compute normalized weights over time (T by N_PARTICLES)
-    normalized_nonlog_weights = np.exp(weights - logsumexp(weights, axis = 1, keepdims = True)) # T by N_PARTICLES
-    # normalize weights to sum to 1, while weights are mathematically normalized,
-    # this is to get rid of errors in the weights due to numerical precision
-    normalized_nonlog_weights /= normalized_nonlog_weights.sum(axis = 1, keepdims = True)
-    max_nonlog_weight = np.max(normalized_nonlog_weights, axis = 1) # find max nonlog weight at each timestep (Shape: T)
-
-    # step 5: Compute tracking dot sizes accoring to normalized weights
-    min_dot_radii, max_dot_radii = (sz/2 for sz in tracking_dot_size_range)
-    tracking_dot_radii = ((normalized_nonlog_weights/max_nonlog_weight[:,None]) * (max_dot_radii - min_dot_radii)) + min_dot_radii # T by N_PARTICLES
-    
-
-    # step 6: Compute prediction line sizes accoring to normalized weights
-    min_line_radii, max_line_radii = (sz/2 for sz in prediction_line_size_range)
-    prediction_line_radii = ((normalized_nonlog_weights/max_nonlog_weight[:,None]) * (max_line_radii - min_line_radii)) + min_line_radii # T by num_prediction_steps+1 by N_PARTICLES
-
-    # --- Also create an array for particle velocity arrow thickness, same shape as tracking_dot_radii ---
-    velocity_arrow_radii = ((normalized_nonlog_weights/max_nonlog_weight[:,None]) * (max_line_radii - min_line_radii)) + min_line_radii  # T by N_PARTICLES
-
-    # step 7: define a function to convert x and y in point space to rerun image UV space
-    xy_to_uv = lambda x, y: ((x + 0.5*diameter) * pixel_density, image_height - ((y + 0.5*diameter) * pixel_density))
-
-    # step 8: convert tracking and prediction data to rerun image UV space
-    tracking_u, tracking_v = xy_to_uv(tracking_x, tracking_y) # T by N_PARTICLES each
-    tracking_uv = np.stack([tracking_u, tracking_v], axis = 2) # T by N_PARTICLES by 2
-    prediction_u, prediction_v = xy_to_uv(prediction_x, prediction_y) # T by num_prediction_steps+1 by N_PARTICLES each
-
-    # NOTE: that the N_particles dimension is lifted while the num predictions step dimension is brought down
-    prediction_uv = np.stack([prediction_u, prediction_v], axis = 3).swapaxes(1, 2) # NOTE: T by N_PARTICLES by num_prediction_steps+1 by 2
-
-    # Step 9: Compute lr expectation. Output is T by 3 (left, right, uncertain)
-    lr_raw_beliefs = get_run_data(get_lr_raw_beliefs(JTAPMICE_DATA, num_prediction_steps), jtap_run_idx)
-
-    # Step 10: Compute weight component correlations
-    weight_component_correlations = compute_weight_component_correlations(JTAPMICE_DATA, run_idx=jtap_run_idx)
-
-    ################################################################################
-    # Process grid data for rendering if requested
-    ################################################################################
-    grid_positions_per_frame = None
-    if render_grid and hasattr(JTAPMICE_DATA.inference, "grid_data"):
-        # Get the grid for the first particle (they are the same for every particle)
-        grid_x = get_run_data(JTAPMICE_DATA.inference.grid_data.x_grid, jtap_run_idx)  # shape: [T, num_grid_cells]
-        # y is always 0 for grid positions (1D grid only over x dimension)
-        if grid_x is not None:
-            # Prepare: for each timestep, select valid grid points inside scene bounds, transform for rerun rendering.
-            grid_positions_per_frame = []
-            has_valid_grid_over_time = []
-            for t in range(grid_x.shape[0]):
-                # NOTE: No Grid for first timestep
-                if t == 0:
-                    positions = np.zeros((0,2))
-                    grid_positions_per_frame.append(positions)
-                    has_valid_grid_over_time.append(False)
-                    continue
-                x_t = grid_x[t]   # shape (num_grid_cells,)
-                y_t = np.zeros_like(x_t)  # y is always 0 for grid positions
-                # Consider cells inside the scene (x in [0, image_width/pixel_density - diameter], y in [0, image_height/pixel_density - diameter])
-                # We'll check scene bounds in image units (scene coordinates)
-                # Since coordinate system is 0-centered and diameter in scene units, usually grid values are from -diameter/2 to scene-diameter/2
-                left = -0.5*diameter
-                right = (image_width/pixel_density) - 0.5*diameter
-                top = -0.5*diameter
-                bottom = (image_height/pixel_density) - 0.5*diameter
-                in_bounds = (
-                    (x_t >= left) & (x_t <= right) &
-                    (y_t >= top) & (y_t <= bottom)
-                )
-                grid_x_in = x_t[in_bounds]
-                grid_y_in = y_t[in_bounds]
-                if np.sum(in_bounds) > 0:
-                    u, v = xy_to_uv(grid_x_in, grid_y_in)
-                    # Stack as Nx2 array for rerun Points2D
-                    positions = np.stack([u, v], axis=-1)
-                    has_valid_grid_over_time.append(True)
-                else:
-                    positions = np.zeros((0,2))  # No valid grid points for this frame
-                    has_valid_grid_over_time.append(False)
-                grid_positions_per_frame.append(positions)
-
-    #####################
-    # LOG DATA TO RERUN
-    #####################
-
-    rerun_app_id = "jtap_single_run" if stimulus_name is None else stimulus_name
-    rr.init(rerun_app_id, spawn=False)
-    rr.connect_grpc()
-    rr.log("/", rr.Clear(recursive=True))
-
-    # primitive datatypes
-    black_color = [0,0,0,255]
-    yellow_color = [255,222,33,255]
-
-    red_color = [255,0,0,255] 
-    green_color = [0,255,0,255]
-    uncertain_color = [0,0,255,255]
-
-    grid_red_color = [255, 0, 0, 255]
-
-    orange_color = [255, 140, 0, 255]  # velocity arrow color
-
-    for timestep in range(len(rgb_video)):
-        rr.set_time(timeline = "frame", sequence = timestep)
-        if rgb_video_highres is not None:
-            rr.log("stimulus/", rr.Image(rgb_video_highres[timestep]))
-        else:
-            rr.log("stimulus/", rr.Image(rgb_video[timestep]))
-
-        rr.log("jtap/", rr.Image(rgb_video[timestep]))
-
-        rr.log("jtap/tracking_positions", 
-            rr.Points2D(
-                positions = tracking_uv[timestep],
-                colors = black_color,
-                radii = tracking_dot_radii[timestep],
-                draw_order=50
-            )
-        )
-
-        rr.log("jtap/prediction_lines", 
-            rr.LineStrips2D(
-                strips = prediction_uv[timestep],
-                colors = yellow_color,
-                radii = prediction_line_radii[timestep],
-                draw_order=10
-            )
-        )
-
-        # --- Plot velocity as arrows if enabled ---
-        if show_velocity:
-            # For each particle, plot velocity vector as an arrow
-            # tracking_uv[timestep] shape: (N_PARTICLES, 2)
-            # tracking_direction[timestep], tracking_speed[timestep]: each (N_PARTICLES,)
-            # Need to compute dx, dy for each using direction (radians) and speed (pixels/scene-units)
-            # -- convert speed to displacement in UV space --
-            # However, speed is in scene units. Need to project it into (delta u, delta v) per particle
-            angles = tracking_direction[timestep]
-            speeds = tracking_speed[timestep]  # speeds in scene units per step
-
-            # The vector in scene space is dx = cos(angle) * speed, dy = sin(angle) * speed
-            dx_scene = np.cos(angles) * speeds
-            dy_scene = np.sin(angles) * speeds
-
-            # Transform the (dx, dy) vector from scene to UV (pixel) units:
-            dx_pixels = dx_scene * pixel_density  # The pixel_density is scene-to-pixel scale
-            dy_pixels = -dy_scene * pixel_density  # minus because v goes downward in image space
-
-            # (vx, vy) in rerun is (dx_pixel, -dy_pixel)
-            vectors = np.stack([dx_pixels, dy_pixels], axis=1)  # shape: (N_PARTICLES, 2)
-            origins = tracking_uv[timestep]  # (N_PARTICLES, 2)
-            radii = velocity_arrow_radii[timestep]  # (N_PARTICLES,)
-
-            rr.log("jtap/velocity_arrows", rr.Arrows2D(
-                origins=origins,
-                vectors=vectors,
-                colors=orange_color,
-                radii=radii,
-                draw_order=30
-            ))
-
-        # ---- Render grid over scene if enabled ----
-        if render_grid and grid_positions_per_frame is not None:
-            if has_valid_grid_over_time[timestep]:
-                grid_positions = grid_positions_per_frame[timestep]
-                if grid_positions.shape[0] > 0:
-                    rr.log(
-                        "jtap/grid_points",
-                        rr.Points2D(
-                            positions=grid_positions,
-                            colors=grid_red_color,
-                            radii=grid_dot_radius,
-                            draw_order=100
-                        )
-                    )
-            else:
-                rr.log("jtap/grid_points", rr.Clear(recursive=True))
-
-        # Log LR beliefs as bar chart
-        # lr_raw_beliefs shape: (T, 3) where indices are [left, right, uncertain]
-        # Based on get_lr_raw_beliefs, index 0=left, 1=right, 2=uncertain
-        lr_values = lr_raw_beliefs[timestep]  # shape: (3,)
-        rr.log("lr_beliefs/", 
-            rr.BarChart(values=lr_values)
-        )
-        
-        # Format ESS information
-        ess_text = f"__{ESS_over_time[timestep]:.2f}__" if ESS_over_time[timestep] <= ESS_threshold else f"{ESS_over_time[timestep]:.2f}"
-        resampled_text = f" **RESAMPLED** (Threshold: {ESS_threshold})" if resampled_over_time[timestep] else ""
-        
-        # Format weight component correlations
-        corr_prev = weight_component_correlations['prev'][timestep]
-        corr_incr = weight_component_correlations['incr'][timestep]
-        corr_prop = weight_component_correlations['prop'][timestep]
-        corr_grid = weight_component_correlations['grid'][timestep]
-        
-        # Find the highest correlation for this timestep
-        correlations = {'prev': corr_prev, 'incr': corr_incr, 'prop': corr_prop, 'grid': corr_grid}
-        max_corr_key = max(correlations, key=correlations.get)
-        
-        # Format correlations with bold for highest
-        corr_texts = []
-        for key, value in correlations.items():
-            if key == max_corr_key:
-                corr_texts.append(f"**{key}: {value:.3f}**")
-            else:
-                corr_texts.append(f"{key}: {value:.3f}")
-        
-        corr_text = " | ".join(corr_texts)
-        
-        info_text = f"> ESS: {ess_text} / {num_particles}{resampled_text}\n\n> Weight Correlations: {corr_text}"
-        rr.log("info/ESS", rr.TextDocument(info_text, media_type=rr.MediaType.MARKDOWN))
-
-def red_green_viz_notebook(JTAPMice_data, viz_key = jax.random.PRNGKey(0), prediction_t_offset = None, video_offset = (0,0),
-    fps = 10, skip_t = 1, show_latents = True, min_dot_alpha = 0.2, min_line_alpha = 0.04, show_resampled_text = True, num_t_steps = None, diameter = 1.0):
-    ###
     """
-    ASSUMPTIONS: 
-    1. SCENE IS STATIC (no changing barriers & occluders)
-    2. View is overlayed on observations
+    Visualize particles, predictions, and left/right beliefs as an animated matplotlib figure.
+    The prediction panel always includes current tracking as step 0, predictions as steps 1...N.
     """
-    ###
+    from tqdm.notebook import tqdm
 
-    assert isinstance(JTAPMice_data, JTAPMiceData), "JTAPMice_data must be of type JTAPMiceData"
-    obs_arrays = JTAPMice_data.stimulus.discrete_obs
-    inference_input = JTAPMice_data.params.inference_input
+    def _squeeze(arr):
+        arr = np.array(arr)
+        return arr[jtap_run_idx] if arr.shape[0] > 1 else arr[0]
+    inf = JTAPMICE_DATA.inference
 
-    def generate_samples(key, n_samples, support, logprobs):
-        keys = jax.random.split(key, n_samples)
-        sampled_idxs = jax.vmap(jax.random.categorical, in_axes = (0, None))(keys, logprobs)
-        return support[sampled_idxs]
+    tracking_x = np.array(_squeeze(inf.tracking.x))
+    tracking_y = np.array(_squeeze(inf.tracking.y)) if hasattr(inf.tracking, "y") else None
+    weights = np.array(_squeeze(inf.weight_data.final_weights))
+    prediction_x = np.array(_squeeze(inf.prediction.x))
+    prediction_y = np.array(_squeeze(inf.prediction.y)) if hasattr(inf.prediction, "y") else None
+    prediction_lr = np.array(_squeeze(inf.prediction.lr))
 
-    generate_samples_vmap = jax.vmap(generate_samples, in_axes = (0,None,0,0))
+    num_frames, num_particles = tracking_x.shape
+    pred_steps = prediction_x.shape[1]
+    # Use at most pred_len steps; fallback to all available steps otherwise. Always show tracking as step 0.
+    plot_pred_steps = pred_len if (pred_len is not None and pred_len <= pred_steps) else pred_steps
+    plot_pred_steps_with_track = plot_pred_steps + 1
 
-    if prediction_t_offset is None:
-        # Handle case where max_prediction_steps might be an array (for multiple runs)
-        max_pred_steps = JTAPMice_data.params.max_prediction_steps
-        if isinstance(max_pred_steps, (list, np.ndarray)):
-            prediction_t_offset = max_pred_steps[0] if len(max_pred_steps) > 0 else max_pred_steps
-        else:
-            prediction_t_offset = max_pred_steps
-
-    max_line_alpha = 1 # should always be 1, makes no sense to have alpha > 1
-    min_line_alpha = min_line_alpha
-
-    max_dot_alpha = 1 # should always be 1, makes no sense to have alpha > 1
-    min_dot_alpha = min_dot_alpha
-
-    if num_t_steps is None:
-        num_inference_steps = JTAPMice_data.inference.weight_data.final_weights.shape[0]
+    # We'll determine the sample idx first.
+    if (max_particles_to_show is not None) and (num_particles > max_particles_to_show):
+        # Use only the top particles by initial (frame 0) final weights
+        sample_idx = np.argsort(weights[0])[::-1][:max_particles_to_show]
     else:
-        num_inference_steps = num_t_steps
-    # Handle case where max_prediction_steps might be an array (for multiple runs)
-    max_pred_steps = JTAPMice_data.params.max_prediction_steps
-    if isinstance(max_pred_steps, (list, np.ndarray)):
-        num_prediction_steps = max_pred_steps[0] if len(max_pred_steps) > 0 else max_pred_steps
-    else:
-        num_prediction_steps = max_pred_steps
-    max_inference_T = num_inference_steps - 1
-    maxt = obs_arrays.shape[0]
-    n_particles = JTAPMice_data.params.num_particles
-    normalized_weights_ = jnp.exp(JTAPMice_data.inference.weight_data.final_weights - logsumexp(JTAPMice_data.inference.weight_data.final_weights, axis = 1, keepdims = True)) # T by N_PARTICLES
-
-    equal_prob_value = 1/n_particles
-
-    particle_collapsed = jnp.any(jnp.isnan(normalized_weights_), axis = 1)
-
-    normalized_weights = jnp.where(jnp.isnan(normalized_weights_), jnp.full_like(normalized_weights_, equal_prob_value), normalized_weights_)
-
-    if max_inference_T > maxt:
-        print("Too many timesteps in particle data")
-        return
-
-    if num_inference_steps - video_offset[0] - video_offset[1] <= 0:
-        print(f"Video limits are too restrictive. Plotting from T = {video_offset[0]}"+\
-              f" to T = {max_inference_T - video_offset[1]} " +\
-              "is not possible")
-        return
-
-    if num_prediction_steps < prediction_t_offset:
-        print(f"Prediction offset is too high. Prediction offset is {prediction_t_offset}"+\
-              f" but max prediction steps is {num_prediction_steps}")
-        return
+        sample_idx = np.arange(num_particles)
     
-    max_inference_T_for_video = max_inference_T - video_offset[1]
+    pred_x_full = stack_tracking_and_predictions(tracking_x, prediction_x, sample_idx, plot_pred_steps)
+    # pred_x_full: (n_frames, plot_pred_steps+1, n_selected_particles)
 
+    lr_belief_probs = compute_lr_beliefs_directly(
+        JTAPMICE_DATA.inference,
+        jtap_run_idx,
+        plot_pred_steps,
+        num_frames,
+        num_particles
+    )
 
-    inf_x_points = JTAPMice_data.inference.tracking.x # T by N_PARTICLES
-    inf_y_points = JTAPMice_data.inference.tracking.y # T by N_PARTICLES
-    pred_x_lines = jnp.concatenate([JTAPMice_data.inference.tracking.x[:,None,:], JTAPMice_data.inference.prediction.x], axis = 1) # T by T_pred+1 by N_PARTICLES
-    pred_y_lines = jnp.concatenate([JTAPMice_data.inference.tracking.y[:,None,:], JTAPMice_data.inference.prediction.y], axis = 1) # T by T_pred+1 by N_PARTICLES
-    inf_dots_alpha_over_time = min_dot_alpha + normalized_weights * (max_dot_alpha - min_dot_alpha)
-    pred_alphas_over_time = min_line_alpha + normalized_weights * (max_line_alpha - min_line_alpha)
-    sizes_over_time = jnp.full((num_inference_steps, n_particles), diameter) # T by N_PARTICLES
-
-    color_mapping = {
-        0: (255, 255, 255),  # white
-        1: (128, 128, 128),  # grey
-        2: (0, 0, 255),      # blue
-        3: (0, 0, 0),        # black
-        4: (255, 0, 0),      # red
-        5: (0, 255, 0)       # green
-    }
-    # Create a list of the RGB colors in the order of their keys
-    color_list = [color_mapping[i] for i in range(6)]
-    color_array = np.array(color_list, dtype=np.uint8)
-    frames = []
-    for arr in obs_arrays:
-        rgb_array = color_array[np.array(arr, dtype = np.uint8)]
-        image = Image.fromarray(rgb_array)
-        frames.append(np.array(image))
-        
-    # Create a figure
-    if show_latents:
-        fig = plt.figure(figsize=(10,8))
-        gs = GridSpec(12, 12, figure=fig)
-        ax1 = fig.add_subplot(gs[:7, :7])
-        ax2 = fig.add_subplot(gs[1:6, 8:]) 
-        ax3 = fig.add_subplot(gs[8:, :7])  # Changed from polar to regular plot
-        ax4 = fig.add_subplot(gs[8:, 8:])  
+    if stimulus is None:
+        if hasattr(JTAPMICE_DATA, "stimulus"):
+            stimulus = JTAPMICE_DATA.stimulus
+        else:
+            raise ValueError("Must provide the stimulus or ensure JTAPMICE_DATA.stimulus exists")
+    if hasattr(stimulus, "rgb_video_highres"):
+        rgb_vid = np.asarray(stimulus.rgb_video_highres)
+    elif hasattr(stimulus, "rgb_video"):
+        rgb_vid = np.asarray(stimulus.rgb_video)
+    elif hasattr(stimulus, "discrete_obs"):
+        rgb_vid = discrete_obs_to_rgb(stimulus.discrete_obs)
     else:
-        fig = plt.figure(figsize=(10,5))
-        gs = GridSpec(1, 12, figure=fig)
-        ax1 = fig.add_subplot(gs[0, :6])
-        ax2 = fig.add_subplot(gs[0, 7:]) 
+        raise ValueError("Could not find rgb frames in stimulus.")
+    H, W = rgb_vid.shape[1:3]
+    n_time = rgb_vid.shape[0]
 
-    ax1.set_aspect('equal', 'box')
-    ax1.set_xticks([])
-    ax1.set_yticks([])
-    ax1.set_yticks([])
-    ax1.set_title('Position (' + r'$S_x, S_y$' +')')
+    diameter = getattr(stimulus, "diameter")
+    ball_radius_scene = diameter / 2.0
 
-    # AX1
+    plt.rcParams.update({
+        "font.size": 22,
+        "axes.titlesize": 28,
+        "axes.labelsize": 24,
+        "xtick.labelsize": 22,
+        "ytick.labelsize": 22,
+        "legend.fontsize": 20,
+    })
 
-    # WORKS WELL NOW
-     
-    scale_multiplier = 1 / JTAPMice_data.params.inference_input.image_discretization
-    image_height = obs_arrays.shape[1] # 2nd dimension is height
-    x_to_pix_x = jax.jit(lambda x, s : (x + 0.5*s) * scale_multiplier)
-    y_to_pix_y = jax.jit(lambda y, s : image_height - 1 - (y + 0.5*s) * scale_multiplier)
+    fig = plt.figure(
+        figsize=(image_scale * 7, image_scale * 4),
+        facecolor='w'
+    )
+    fig.suptitle(
+        "Image-conditioned Sequential Monte Carlo for Tracking and Prediction",
+        fontsize=32,
+        fontweight='bold',
+        y=0.99
+    )
 
-    x_to_pix_x_vmap = jax.vmap(x_to_pix_x)
-    y_to_pix_y_vmap = jax.vmap(y_to_pix_y)
+    gs = fig.add_gridspec(3, 4, height_ratios=[2, 2.5, 2], width_ratios=[4, 1, 0.01, 0.1])
+    ax_pred = fig.add_subplot(gs[0:2, 0], facecolor='w')  # prediction (top left, takes 2 rows)
+    ax_belief = fig.add_subplot(gs[0:2, 1], facecolor='w')  # LR bar (top right)
+    ax_scene = fig.add_subplot(gs[2, 0], facecolor='w')    # Scene/image (bottom left)
 
-    filtering_posterior_dot_probs = ax1.scatter(x_to_pix_x_vmap(inf_x_points[0], sizes_over_time[0]), 
-        y_to_pix_y_vmap(inf_y_points[0], sizes_over_time[0]),
-        s = 20,
-        c = 'k', linewidths = 0,
-        zorder=5,
-        alpha = inf_dots_alpha_over_time[0])
-            
-    p_lines = []
-    for n in range(n_particles):
-        p_lines.append(Line2D(x_to_pix_x(pred_x_lines[0,:,n], sizes_over_time[0,n]), 
-            y_to_pix_y(pred_y_lines[0,:,n], sizes_over_time[0,n]), color='orange', 
-            alpha=round(float(pred_alphas_over_time[0,n]),2), zorder=4, linestyle="-"))
-        ax1.add_line(p_lines[n])
-        
-    im = ax1.imshow(frames[0])
+    plt.subplots_adjust(left=0.16, right=0.99, top=0.90, bottom=0.01)
 
-    timer_text = fig.text(0.1, 0.95, "Timestep: " + r'$\bf{0}$', ha='left', color="k", fontsize=15)
-    if show_resampled_text:
-        resampled_text = fig.text(0.4, 0.95, f"Resampled: {JTAPMice_data.inference.resampled[0]}", ha='left', color="b", fontsize=17)
+    ax_pred.set_title("Future Predicted Positions per Particle")
+    ax_scene.set_title("Ball center position (Black dots sized by SMC weights) over RGB image")
+    ax_belief.set_title("LR Belief (prob)")
 
-    particle_collapsed_text = fig.text(0.7, 0.95, f"Particle Collapsed: {particle_collapsed[0]}", ha='left', color="r", fontsize=15)
+    import matplotlib.patches as mpatches
 
-    # AX2
-    lr_data = get_lr_raw_beliefs(JTAPMice_data, prediction_t_offset)
-    # Handle both single run (shape: T, 3) and multiple runs (shape: N, T, 3)
-    if lr_data.ndim == 3:
-        lr_data = lr_data[0]  # Take first run if multiple runs
-    bars = ax2.bar(range(3), lr_data[0], color = ['green', 'red', 'blue'])
+    scn_dots = ax_scene.scatter(
+        [], [], s=[], c='black', alpha=1,
+        edgecolors='none', linewidths=0, zorder=3
+    )
 
-    # Set up the axis limits
-    # Set title and x-ticks
-    ax2.set_title('Left or Right: Which will it hit next?', fontsize=10)
-    ax2.set_xticks(range(3))
-    ax2.set_xticklabels(['Left', 'Right', 'Uncertain'])
-    ax2.set_ylim(0, 1)
+    img_artist = ax_scene.imshow(
+        np.zeros_like(rgb_vid[0]), origin="upper", animated=True, zorder=0, extent=(0, W, H, 0)
+    )
 
-    if show_latents:
-        # AX3: Direction bar chart (left vs right only)
-        # Direction values are -1.0 (left) and 1.0 (right)
-        n_samples = 10000
-        viz_key, dir_key = jax.random.split(viz_key, 2)
-        dir_keys = jax.random.split(dir_key, num_inference_steps)
-        sampled_dir = generate_samples_vmap(dir_keys, n_samples, JTAPMice_data.inference.tracking.direction[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
-        
-        # Compute probabilities for left (-1.0) and right (1.0) for each timestep
-        all_dir_probs = []
-        for i in range(max_inference_T_for_video + 1):
-            left_count = np.sum(sampled_dir[i] == -1.0)
-            right_count = np.sum(sampled_dir[i] == 1.0)
-            total = left_count + right_count
-            if total > 0:
-                left_prob = left_count / total
-                right_prob = right_count / total
+    obs_border_rect = mpatches.Rectangle(
+        (0, 0), W, H,
+        linewidth=4, edgecolor='black', facecolor='none', zorder=2
+    )
+    ax_scene.add_patch(obs_border_rect)
+
+    lines = []
+    for _ in range(len(sample_idx)):
+        line, = ax_pred.plot([], [], lw=line_thick_min, color='yellow', alpha=0.85, zorder=2)
+        lines.append(line)
+    pred_dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=3, edgecolors='none', linewidths=0)
+    bar_beliefs = ax_belief.bar(['Left', 'Right', 'Unc.'], [0, 0, 0], color=['#3399FF', '#FF9933', '#C0C0C0'])
+
+    ax_pred.set_xlabel('X pos')
+    ax_pred.set_ylabel('Prediction step (future, 0=current, 1=+1 frame, ...)')
+
+    scene_dim = JTAPMICE_DATA.params.inference_input.scene_dim
+    scene_dim = np.array(scene_dim)
+    if scene_dim.size > 0:
+        Wscene = float(np.ravel(scene_dim)[0])
+    else:
+        Wscene = 1.0
+
+    ax_pred.set_xlim(0, Wscene)
+    ax_pred.set_ylim(-0.5, plot_pred_steps_with_track - 0.5)
+    ax_pred.set_xticks(np.arange(0, int(np.ceil(Wscene)) + 1, 1))
+    ax_pred.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+    y_tick_locs = np.arange(0, plot_pred_steps_with_track, 5)
+    if len(y_tick_locs) == 0 or y_tick_locs[-1] != plot_pred_steps_with_track - 1:
+        y_tick_locs = np.append(y_tick_locs, plot_pred_steps_with_track - 1)
+    y_tick_locs = np.unique(y_tick_locs)
+    ax_pred.set_yticks(y_tick_locs)
+    ax_pred.set_yticklabels([f"+{yy}" for yy in y_tick_locs])
+    ax_pred.grid(True, linestyle='--', alpha=0.3)
+
+    ax_scene.set_axis_off()
+    ax_scene.set_xlim(0, W)
+    ax_scene.set_ylim(H, 0)
+    ax_belief.set_ylim(0, 1.01)
+    ax_belief.set_ylabel('Prob')
+    ax_belief.set_xticks([0, 1, 2])
+    ax_belief.set_xticklabels(['Left', 'Right', 'Unknown'])
+    for spine in ["top", "right"]:
+        ax_belief.spines[spine].set_visible(False)
+
+    def normalize_weights(w):
+        w = np.array(w)
+        m = np.max(w)
+        if m == 0:
+            return np.ones_like(w)
+        w = w - np.max(w)
+        w = np.exp(w)
+        return w / np.sum(w)
+
+    def compute_dot_sizes(weights, min_size, max_size):
+        wnorm = normalize_weights(weights)
+        sizes = min_size + (max_size - min_size) * wnorm
+        return sizes
+
+    def compute_line_widths(weights, min_width, max_width):
+        wnorm = normalize_weights(weights)
+        ws = min_width + (max_width - min_width) * wnorm
+        return ws
+
+    anim_progress = {'bar': None, 'last_frame': -1}
+
+    def animate(t):
+        if use_tqdm:
+            if anim_progress['bar'] is None:
+                anim_progress['bar'] = tqdm(total=num_frames, desc="Rendering frames", leave=True)
+                anim_progress['last_frame'] = -1
+            if t > anim_progress['last_frame']:
+                anim_progress['bar'].n = t + 1
+                anim_progress['bar'].refresh()
+                anim_progress['last_frame'] = t
+            if (t + 1) == num_frames:
+                anim_progress['bar'].close()
+
+        img = rgb_vid[t]
+        img_artist.set_data(img)
+        img_artist.set_extent((0, W, H, 0))
+        tx = tracking_x[t]
+        tw = weights[t]
+        s_idx = np.array(sample_idx)
+        tx_samp = tx[s_idx]
+        tw_samp = tw[s_idx]
+        tx_samp_center = tx_samp + ball_radius_scene
+        x_pix_center = tx_samp_center * (W / Wscene)
+        y_pix = np.ones_like(x_pix_center) * (H / 2)
+
+        sizes_scn = compute_dot_sizes(tw_samp, scn_dot_min_size, scn_dot_max_size)
+        scn_dots.set_offsets(np.stack([x_pix_center, y_pix], axis=1))
+        scn_dots.set_sizes(sizes_scn)
+
+        # Now assemble predictions (including current tracking at step 0, then step 1 etc).
+        # pred_x_full: (num_frames, plot_pred_steps_with_track, n_sel_particles)
+        xs_pred_t = pred_x_full[t] + ball_radius_scene  # (plot_pred_steps_with_track, n_sel_particles)
+        ys_pred_t = np.arange(plot_pred_steps_with_track)[:, None] * np.ones((1, len(s_idx)))  # (plot_pred_steps_with_track, n_sel_particles)
+
+        # So that the dots always appear at proper y (fix bug for frame 0, dots offscreen)
+        # For the scatter we want offset: (n_sel_particles, 2) - just step 0 (current time)
+        pred_dots.set_offsets(np.stack([xs_pred_t[0], np.zeros_like(xs_pred_t[0])], axis=1))
+        pred_dots.set_sizes(compute_dot_sizes(tw_samp, pred_dot_min_size, pred_dot_max_size))
+
+        line_ws = compute_line_widths(tw_samp, line_thick_min, line_thick_max)
+        for li, p_idx in enumerate(range(len(s_idx))):
+            # For each displayed particle
+            xs_particle = xs_pred_t[:, li]
+            ys_particle = ys_pred_t[:, li]
+            # Compute masking like original: prediction_lr only covers steps after 0 (i.e. pred only, not tracking)
+            lrs = prediction_lr[t, :plot_pred_steps, s_idx[li]]
+            mask = np.ones(len(xs_particle), dtype=bool)
+            hits = np.where((lrs == 0) | (lrs == 1))[0]
+            if len(hits) > 0:
+                hit_idx = hits[0]
+                # after tracking step (step 0), so mask after hit_idx+1+1
+                mask[(hit_idx + 2):] = False
+            lines[li].set_data(xs_particle[mask], ys_particle[mask])
+            lines[li].set_linewidth(line_ws[li])
+            lines[li].set_alpha(0.88)
+
+        left_p, right_p, unc_p = lr_belief_probs[t]
+        for i, bar in enumerate(bar_beliefs):
+            bar.set_height([left_p, right_p, unc_p][i])
+            if i == 0:
+                bar.set_color("#0055CC" if left_p > right_p else "#3399FF")
+            elif i == 1:
+                bar.set_color("#FFA416" if right_p > left_p else "#FF9933")
             else:
-                left_prob = 0.0
-                right_prob = 0.0
-            all_dir_probs.append(np.array([left_prob, right_prob]))
-        
-        # Plot direction as bar chart with two bars: Left and Right
-        dir_bars = ax3.bar(range(2), all_dir_probs[0], color=['blue', 'red'], alpha=0.6, edgecolor=None)
-        ax3.set_title('Direction')
-        ax3.set_xticks(range(2))
-        ax3.set_xticklabels(['Left (-1.0)', 'Right (1.0)'])
-        ax3.set_ylim(0, 1)
-        ax3.set_ylabel('Probability')
+                bar.set_color("#C0C0C0")
+        ax_belief.set_ylim(0, 1.01)
+        ax_belief.set_title("LR belief:\nL={:.2f}, R={:.2f}, U={:.2f}".format(left_p, right_p, unc_p), fontsize=26)
+        for ax in [ax_pred, ax_scene]:
+            ax.set_title(ax.get_title().split('\n')[0] + f"\nframe {t + 1}/{num_frames}", fontsize=26)
+        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect]
 
-        # AX4: Speed bar chart
-        num_bins = int(inference_input.max_speed / 0.1) + 1
-        n_samples = 10000
-        max_count = 10
-        viz_key, speed_key = jax.random.split(viz_key, 2)
-        speed_keys = jax.random.split(speed_key, num_inference_steps)
-        sampled_speed = generate_samples_vmap(speed_keys, n_samples, JTAPMice_data.inference.tracking.speed[:num_inference_steps], JTAPMice_data.inference.weight_data.final_weights[:num_inference_steps])
-        all_counts_speed = []
-        all_bin_edges_speed = []
-        # NOTE: IN THIS VIZ, STEP SPEED IS TAKEN a step before current step
-        for i in range(max_inference_T_for_video + 1):
-            counts_speed, bin_edges_speed = np.histogram(sampled_speed[i], bins=num_bins, range=(0, inference_input.max_speed), density=True)
-            all_counts_speed.append(counts_speed * (max_count / sum(counts_speed)) if sum(counts_speed) > 0 else counts_speed)
-            all_bin_edges_speed.append(bin_edges_speed)
-
-        bin_centers = (all_bin_edges_speed[0][:-1] + all_bin_edges_speed[0][1:]) / 2
-        bin_width = all_bin_edges_speed[0][1] - all_bin_edges_speed[0][0]
-        speed_bars = ax4.bar(bin_centers, all_counts_speed[0], width=bin_width, bottom=0, color='orange', edgecolor=None, alpha=0.6)
-        ax4.set_title('Speed (' + r'$\nu$' +')')
-        ax4.set_ylim(0, max_count)
-        ax4.set_xlabel('Speed')
-        ax4.set_yticks([])    
-        ax4.set_yticklabels([])
-
-    def init_func():
-        pass
-
-    def update(frame_idx):
-        # if idx <= video_offset[0]:
-        #     return
-        frame_idx += skip_t*(video_offset[0])
-        im.set_array(frames[frame_idx])
-        if frame_idx % skip_t == 0:
-            idx = int(frame_idx/skip_t)
-            timer_text.set_text(f"Timestep: " + r'$\bf{' + str(idx) + r'}$')
-            particle_collapsed_text.set_text(f"Particle Collapsed: {particle_collapsed[idx]}")
-            if show_resampled_text:
-                if particle_collapsed[idx]:
-                    resampled_text.set_color("r")
-                    resampled_text.set_text("Resampled: Disabled")
-                else:
-                    if JTAPMice_data.inference.resampled[idx]:
-                        resampled_text.set_color("g")
-                    else:
-                        resampled_text.set_color("b")
-                    resampled_text.set_text(f"Resampled: {JTAPMice_data.inference.resampled[idx]}")
-            print(f"rendering inference step {idx}")
-            filtering_posterior_dot_probs.set_offsets(np.c_[
-                x_to_pix_x_vmap(inf_x_points[idx], 
-                    sizes_over_time[idx]),
-                y_to_pix_y_vmap(inf_y_points[idx], 
-                    sizes_over_time[idx])
-            ])
-            filtering_posterior_dot_probs.set_alpha(inf_dots_alpha_over_time[idx])
-            for n in range(n_particles):
-
-                p_lines[n].set_data(x_to_pix_x(pred_x_lines[idx,:,n], sizes_over_time[idx,n]), 
-                    y_to_pix_y(pred_y_lines[idx,:,n], sizes_over_time[idx,n]))
-                p_lines[n].set_alpha(round(float(pred_alphas_over_time[idx,n]),2))
-
-            for bar, height in zip(bars, lr_data[idx]):
-                bar.set_height(height)
-            if show_latents:
-                # Update direction bars (left and right probabilities)
-                for bar, height in zip(dir_bars, all_dir_probs[idx]):
-                    bar.set_height(height)
-                # Update speed bars
-                for bar, height in zip(speed_bars, all_counts_speed[idx]):
-                    bar.set_height(height)
-
-    n_frames = max_inference_T_for_video + 1 - video_offset[0]
-    animation = FuncAnimation(fig, update, frames=skip_t*n_frames, init_func=init_func, interval=1000//fps)
+    anim = animation.FuncAnimation(
+        fig, animate, frames=num_frames, interval=(1000/fps), blit=True, repeat=True
+    )
     plt.close()
-    return HTML_Display(animation.to_html5_video())
+    return HTML(anim.to_jshtml())
