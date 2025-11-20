@@ -116,24 +116,25 @@ def jtap_plot_lr_lines(
 
     # Panel arrangement setup
     if include_stimulus and stimulus_image is not None:
+        # Always put stimulus ABOVE the line plots, full width
         if include_baselines:
-            # 3x2 grid: 3 rows for plots, 2 cols (stimulus+plots)
-            fig = plt.figure(figsize=(14, 3 * 4))
-            stimulus_width = 0.6 if stimulus_aspect is not None else 0.6
-            gs = GridSpec(3, 2, figure=fig, width_ratios=[stimulus_width, 1], hspace=0.5, wspace=0.4)
-            stimulus_ax = fig.add_subplot(gs[:, 0])
-            ax0 = fig.add_subplot(gs[0, 1])
-            ax1 = fig.add_subplot(gs[1, 1], sharex=ax0)
-            ax2 = fig.add_subplot(gs[2, 1], sharex=ax0)
+            n_plot_rows = 3
+            fig = plt.figure(figsize=(12, 3 * (n_plot_rows+1)))  # 1 for stimulus row
+            # Gridspec: 4 rows = 1 for stimulus, 3 for plots
+            gs = GridSpec(n_plot_rows + 1, 1, figure=fig, height_ratios=[0.5] + [1] * n_plot_rows, hspace=0.4)
+            stimulus_ax = fig.add_subplot(gs[0, 0])
+            ax0 = fig.add_subplot(gs[1, 0])
+            ax1 = fig.add_subplot(gs[2, 0], sharex=ax0)
+            ax2 = fig.add_subplot(gs[3, 0], sharex=ax0)
             axes = [ax0, ax1, ax2]
             belief_keys = [("model", "Model"), ("frozen", "Frozen"), ("decaying", "Decaying")]
         else:
             arr, label = get_belief_and_label(show)
-            fig = plt.figure(figsize=(12, 4))
-            stimulus_width = 0.6 if stimulus_aspect is not None else 0.6
-            gs = GridSpec(1, 2, figure=fig, width_ratios=[stimulus_width, 1], wspace=0.4)
+            fig = plt.figure(figsize=(10, 6))
+            # Two rows: stimulus, then main plot
+            gs = GridSpec(2, 1, figure=fig, height_ratios=[0.7, 1.3], hspace=0.35)
             stimulus_ax = fig.add_subplot(gs[0, 0])
-            axes = [fig.add_subplot(gs[0, 1])]
+            axes = [fig.add_subplot(gs[1, 0])]
             belief_keys = [(show, label)]
     else:
         # No stimulus
@@ -276,9 +277,12 @@ def jtap_plot_lr_lines(
         ax.set_title(title, fontsize=17, fontweight='semibold', color=COLORS['text'], pad=18)
 
         if not remove_legend:
-            legend = ax.legend(fontsize=13, frameon=True, fancybox=True, shadow=True, 
-                             framealpha=0.95, edgecolor='none', facecolor='white',
-                             loc='best', borderpad=0.8, labelspacing=0.7)
+            legend = ax.legend(
+                fontsize=13, frameon=True, fancybox=True, shadow=True, 
+                framealpha=0.95, edgecolor='none', facecolor='white',
+                loc='upper center', bbox_to_anchor=(0.5, 1.425), ncol=len(channel_labels),
+                borderpad=0.8, labelspacing=0.7, handlelength=2.5, columnspacing=1.3
+            )
             # Make legend text slightly bolder
             for text in legend.get_texts():
                 text.set_fontweight('medium')
