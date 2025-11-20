@@ -22,9 +22,12 @@ def init_proposal(init_proposal_args):
 
     pos_noise = mi.σ_pos_initprop
     scale = mi.image_discretization
+    diameter = mi.diameter
+
+    
     _, data_driven_x, *_ = data_driven_size_and_position(initial_discrete_obs, scale)
 
-    init_prop_x = genjax.truncated_normal(data_driven_x, pos_noise, 0., mi.scene_dim[0] - mi.diameter) @ "x" # joint sampling of x and y
+    init_prop_x = genjax.truncated_normal(data_driven_x, pos_noise, -diameter, mi.scene_dim[0]) @ "x"
     
     return InitProposalRetval(
         init_prop_x=init_prop_x,

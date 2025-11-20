@@ -13,7 +13,7 @@ def init_model(mi):
     diameter = mi.diameter
     masked_occluders = mi.masked_occluders
 
-    x = genjax.uniform(jnp.float32(0.), mi.scene_dim[0] - diameter) @ "x"
+    x = genjax.uniform(-diameter, mi.scene_dim[0]) @ "x"
     # for the Left-Right task, scene_dim[1] is equal to the diameter of the ball
     # hence y will always be 0
     y = jnp.float32(0.)
@@ -24,7 +24,7 @@ def init_model(mi):
     # check if the ball has hit the boundary
     hit_boundary = (x <= (0 + epsilon)) | (x >= (mi.scene_dim[0] - diameter - epsilon))
     is_switching_timestep = False
-
+    is_outlier_step = False
     # check visibility condition
     is_target_hidden = is_ball_fully_hidden(x, y, diameter, masked_occluders)
     is_target_visible = is_ball_fully_visible(x, y, diameter, masked_occluders)
@@ -38,6 +38,7 @@ def init_model(mi):
         speed=speed, 
         direction=direction, 
         hit_boundary=hit_boundary,
+        is_outlier_step=is_outlier_step,
         is_switching_timestep=is_switching_timestep,
         masked_occluders=masked_occluders, 
         is_target_hidden=is_target_hidden,

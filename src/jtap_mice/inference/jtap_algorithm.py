@@ -55,7 +55,7 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         # and stays static for the rest of the prediction steps. This way, we can just 
         # look at the last timestep to see which it hit (if it hit any)
         coded_lr = jnp.where(coded_lr == jnp.int8(2), left_right_sensor_readouts(next_sim_mos, mi.scene_dim), coded_lr)
-        prediction_data = PredictionData(x=next_sim_mos.x, y=next_sim_mos.y, speed=next_sim_mos.speed, direction=next_sim_mos.direction, hit_boundary=next_sim_mos.hit_boundary, is_switching_timestep=next_sim_mos.is_switching_timestep, lr=coded_lr)
+        prediction_data = PredictionData(x=next_sim_mos.x, y=next_sim_mos.y, speed=next_sim_mos.speed, direction=next_sim_mos.direction, hit_boundary=next_sim_mos.hit_boundary, is_switching_timestep=next_sim_mos.is_switching_timestep, lr=coded_lr, is_outlier_step=next_sim_mos.is_outlier_step)
         return (next_key, next_sim_mos, coded_lr), (prediction_data)
 
     def particle_filter_step_lr(carry, t):
@@ -202,7 +202,9 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
             x=step_mos.x,
             y=step_mos.y,
             direction=step_mos.direction,
-            speed=step_mos.speed
+            speed=step_mos.speed,
+            is_outlier_step=step_mos.is_outlier_step,
+            is_switching_timestep=step_mos.is_switching_timestep,
         )
         
         JTAPMice_data_step = JTAPMiceInference(
@@ -251,7 +253,9 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         x=init_mos.x,
         y=init_mos.y,
         direction=init_mos.direction,
-        speed=init_mos.speed
+        speed=init_mos.speed,
+        is_outlier_step=init_mos.is_outlier_step,
+        is_switching_timestep=init_mos.is_switching_timestep,
     )
 
     # Create empty grid data for initial step with correct shapes

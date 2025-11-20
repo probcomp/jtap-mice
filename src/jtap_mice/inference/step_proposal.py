@@ -297,7 +297,7 @@ def simple_step_proposal_from_prior(mi, mo, bottom_up_proposed_x):
     current_x = mo.x
 
     step_prop_speed = genjax.truncated_normal(current_speed, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
-    step_prop_direction = direction_flip_distribution(current_direction, mi.σ_direction_stepprop_flip_prob) @ "direction"
+    step_prop_direction = direction_flip_distribution(current_direction, mi.proposal_direction_flip_prob) @ "direction"
     step_prop_x = bottom_up_proposed_x
 
     is_switching_timestep = jnp.not_equal(step_prop_direction, current_direction)

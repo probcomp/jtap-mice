@@ -15,8 +15,8 @@ class ChexModelInput:
     model_outlier_prob: float
     proposal_direction_outlier_tau: float
     proposal_direction_outlier_alpha: float
-    σ_pos: float
-    σ_speed: float
+    σ_pos_model: float
+    σ_speed_model: float
     model_direction_flip_prob: float
     pixel_corruption_prob: float
     tile_size: int
@@ -24,26 +24,25 @@ class ChexModelInput:
     image_power_beta: float
     max_speed: float
     max_num_occ: int
-    num_x_grid : int
-    num_y_grid : int
-    grid_size_bounds : Tuple[float, float]
-    direction_values: List[float] = None
+    num_x_grid: int
+    grid_size_bounds: Tuple[float, float]
+    simulate_every: int
+    σ_pos_simulation: float
+    σ_speed_simulation: float
+    simulation_direction_flip_prob: float
+    σ_pos_initprop: float
+    proposal_direction_flip_prob: float
+    σ_speed_stepprop: float
+    σ_pos_stepprop: float
+    direction_values: jnp.ndarray = None
     image_discretization: float = None
     diameter: float = None
-    scene_dim: Tuple[int, int] = None
-    num_x_grid_arr : jnp.ndarray = None
+    scene_dim: jnp.ndarray = None
+    num_x_grid_arr: jnp.ndarray = None
     pix_x: jnp.ndarray = None
     pix_y: jnp.ndarray = None
     tile_size_arr: jnp.ndarray = None
-    masked_occluders : Mask = None
-    simulate_every : int = None
-    σ_pos_sim: float = None
-    σ_speed_sim: float = None
-    σ_direction_sim: float = None
-    σ_pos_initprop: float = None
-    σ_direction_stepprop_flip_prob: float = None
-    σ_speed_stepprop: float = None
-    σ_pos_stepprop: float = None
+    masked_occluders: Mask = None
 
     def prepare_hyperparameters(self):
         # NOTE: Diameter is a constant value of 1.0 for now
@@ -74,7 +73,7 @@ class ChexModelInput:
 
 
 ModelOutput = namedtuple("ModelOutput", [
-    "diameter", "x", "y", "speed", "direction", "hit_boundary", "is_switching_timestep", "masked_occluders", "is_target_hidden", "is_target_partially_hidden",
+    "diameter", "x", "y", "speed", "direction", "hit_boundary", "is_outlier_step", "is_switching_timestep", "masked_occluders", "is_target_hidden", "is_target_partially_hidden",
     "is_target_visible", "T"
 ])
 

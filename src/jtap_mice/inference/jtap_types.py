@@ -77,6 +77,7 @@ class PredictionData(NamedTuple):
     y: jnp.ndarray
     speed: jnp.ndarray
     direction: jnp.ndarray
+    is_outlier_step: jnp.ndarray
     hit_boundary: jnp.ndarray
     is_switching_timestep: jnp.ndarray
     lr: jnp.ndarray
@@ -86,6 +87,8 @@ class TrackingData(NamedTuple):
     y: jnp.ndarray
     direction: jnp.ndarray
     speed: jnp.ndarray
+    is_outlier_step: jnp.ndarray
+    is_switching_timestep: jnp.ndarray
 
 class WeightData(NamedTuple):
     prop_weights: jnp.ndarray
