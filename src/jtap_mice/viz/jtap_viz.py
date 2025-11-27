@@ -80,7 +80,7 @@ def animate_jtap_mice_predictions(
 ):
     """
     Visualize particles, predictions, and left/right beliefs as an animated matplotlib figure.
-    The prediction panel always includes current tracking as step 0, predictions as steps 1...N.
+    The prediction panel shows absolute timesteps with full trajectory history.
     """
     from tqdm.notebook import tqdm
 
@@ -153,8 +153,9 @@ def animate_jtap_mice_predictions(
         "legend.fontsize": 20,
     })
 
+    # Make figure taller to accommodate longer y-axis
     fig = plt.figure(
-        figsize=(image_scale * 7, image_scale * 4),
+        figsize=(image_scale * 7, image_scale * 6),
         facecolor='w'
     )
     fig.suptitle(
@@ -164,14 +165,14 @@ def animate_jtap_mice_predictions(
         y=0.99
     )
 
-    gs = fig.add_gridspec(3, 4, height_ratios=[2, 2.5, 2], width_ratios=[4, 1, 0.01, 0.1])
+    gs = fig.add_gridspec(3, 4, height_ratios=[3, 2.5, 2], width_ratios=[4, 1, 0.01, 0.1])
     ax_pred = fig.add_subplot(gs[0:2, 0], facecolor='w')  # prediction (top left, takes 2 rows)
     ax_belief = fig.add_subplot(gs[0:2, 1], facecolor='w')  # LR bar (top right)
     ax_scene = fig.add_subplot(gs[2, 0], facecolor='w')    # Scene/image (bottom left)
 
     plt.subplots_adjust(left=0.16, right=0.99, top=0.90, bottom=0.01)
 
-    ax_pred.set_title("Future Predicted Positions per Particle")
+    ax_pred.set_title("Trajectory and Future Predictions")
     ax_scene.set_title("Ball center position (Black dots sized by SMC weights) over RGB image")
     ax_belief.set_title("LR Belief (prob)")
 
@@ -200,30 +201,42 @@ def animate_jtap_mice_predictions(
     )
     right_barrier_line = ax_pred.axvline(
         right_barrier_x, color='k', linestyle=':', linewidth=3, alpha=0.65, zorder=5, animated=True
-    )  # We'll set the xdata below
+    )
+
+    # Store historical positions and sizes for each particle
+    historical_positions = {i: {'x': [], 'y': [], 'sizes': []} for i in range(len(sample_idx))}
 
     # Use orange lines for predictions instead of yellow
     lines = []
     for _ in range(len(sample_idx)):
         line, = ax_pred.plot([], [], lw=line_thick_min, color='#FFD700', alpha=0.8, zorder=2)  # dark yellow
         lines.append(line)
+    
+    # Create scatter plots for historical positions (one per particle)
+    historical_dots = []
+    for _ in range(len(sample_idx)):
+        dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=1, edgecolors='none', linewidths=0)
+        historical_dots.append(dots)
+    
+    # Current position dots
     pred_dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=3, edgecolors='none', linewidths=0)
     bar_beliefs = ax_belief.bar(['Left', 'Right', 'Unc.'], [0, 0, 0], color=['#3399FF', '#FF9933', '#C0C0C0'])
 
     ax_pred.set_xlabel('X pos')
-    ax_pred.set_ylabel('Prediction step (future, 0=current, 1=+1 frame, ...)')
+    ax_pred.set_ylabel('Time (absolute frame number)')
 
     ax_pred.set_xlim(0, Wscene)
-    ax_pred.set_ylim(-0.5, plot_pred_steps_with_track - 0.5)
+    # Set y-axis to show absolute time from 0 to num_frames + plot_pred_steps
+    max_y = num_frames + plot_pred_steps
+    ax_pred.set_ylim(-0.5, max_y - 0.5)
     ax_pred.set_xticks(np.arange(0, int(np.ceil(Wscene)) + 1, 1))
     ax_pred.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
-    y_tick_locs = np.arange(0, plot_pred_steps_with_track, 5)
-    # if len(y_tick_locs) == 0 or y_tick_locs[-1] != plot_pred_steps_with_track - 1:
-    #     y_tick_locs = np.append(y_tick_locs, plot_pred_steps_with_track - 1)
-    y_tick_locs = np.unique(y_tick_locs)
+    # Set y-axis ticks for absolute time
+    y_tick_step = max(1, max_y // 20)  # Adjust tick density based on total frames
+    y_tick_locs = np.arange(0, max_y, y_tick_step)
     ax_pred.set_yticks(y_tick_locs)
-    ax_pred.set_yticklabels([f"+{yy}" for yy in y_tick_locs])
+    ax_pred.set_yticklabels([f"{int(yy)}" for yy in y_tick_locs])
     ax_pred.grid(True, linestyle='--', alpha=0.3)
 
     ax_scene.set_axis_off()
@@ -316,20 +329,42 @@ def animate_jtap_mice_predictions(
         scn_dots.set_offsets(np.stack([x_pix_center, y_pix], axis=1))
         scn_dots.set_sizes(sizes_scn)
 
-        # Now assemble predictions (including current tracking at step 0, then step 1 etc).
-        xs_pred_t = pred_x_full[t] + ball_radius_scene  # (plot_pred_steps_with_track, n_sel_particles)
-        ys_pred_t = np.arange(plot_pred_steps_with_track)[:, None] * np.ones((1, len(s_idx)))  # (plot_pred_steps_with_track, n_sel_particles)
+        # Compute current dot sizes for pred_dots
+        current_dot_sizes = compute_dot_sizes(tw_samp, pred_dot_min_size, pred_dot_max_size)
 
-        # For the scatter we want offset: (n_sel_particles, 2) - just step 0 (current time)
-        pred_dots.set_offsets(np.stack([xs_pred_t[0], np.zeros_like(xs_pred_t[0])], axis=1))
-        pred_dots.set_sizes(compute_dot_sizes(tw_samp, pred_dot_min_size, pred_dot_max_size))
+        # Update historical positions for each particle - store the size from this timestep
+        for p_idx in range(len(s_idx)):
+            historical_positions[p_idx]['x'].append(tx_samp_center[p_idx])
+            historical_positions[p_idx]['y'].append(t)
+            historical_positions[p_idx]['sizes'].append(current_dot_sizes[p_idx])
+
+        # Update historical dots for each particle
+        for p_idx in range(len(s_idx)):
+            if len(historical_positions[p_idx]['x']) > 1:  # Only show history if we have more than current point
+                hist_x = historical_positions[p_idx]['x'][:-1]  # All but current
+                hist_y = historical_positions[p_idx]['y'][:-1]  # All but current
+                hist_sizes = historical_positions[p_idx]['sizes'][:-1]  # All but current - use stored sizes
+                historical_dots[p_idx].set_offsets(np.stack([hist_x, hist_y], axis=1))
+                historical_dots[p_idx].set_sizes(hist_sizes)
+            else:
+                historical_dots[p_idx].set_offsets(np.empty((0, 2)))
+                historical_dots[p_idx].set_sizes([])
+
+        # Now assemble predictions starting from current time t
+        xs_pred_t = pred_x_full[t] + ball_radius_scene  # (plot_pred_steps_with_track, n_sel_particles)
+        # Y coordinates are now absolute time: current time t, then t+1, t+2, etc.
+        ys_pred_t = (t + np.arange(plot_pred_steps_with_track))[:, None] * np.ones((1, len(s_idx)))  # (plot_pred_steps_with_track, n_sel_particles)
+
+        # For the current position scatter (just current time t)
+        pred_dots.set_offsets(np.stack([xs_pred_t[0], np.full_like(xs_pred_t[0], t)], axis=1))
+        pred_dots.set_sizes(current_dot_sizes)
 
         line_ws = compute_line_widths(tw_samp, line_thick_min, line_thick_max)
 
         # For each displayed particle, mask its predictions if predicted ball *center* has reached a radius away from either barrier
         for li, p_idx in enumerate(range(len(s_idx))):
             xs_particle = xs_pred_t[:, li]  # scene x-coords for all prediction steps (center of ball)
-            ys_particle = ys_pred_t[:, li]  # y steps
+            ys_particle = ys_pred_t[:, li]  # absolute time steps
 
             # We start with all points
             idxs_to_draw = np.arange(len(xs_particle))
@@ -412,7 +447,7 @@ def animate_jtap_mice_predictions(
         for ax in [ax_pred, ax_scene]:
             ax.set_title(ax.get_title().split('\n')[0] + f"\nframe {t + 1}/{num_frames}", fontsize=26)
 
-        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line]
+        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line] + historical_dots
 
     anim = animation.FuncAnimation(
         fig, animate, frames=num_frames, interval=(1000/fps), blit=True, repeat=True
