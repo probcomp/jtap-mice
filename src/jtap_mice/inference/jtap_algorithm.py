@@ -10,7 +10,7 @@ from genjax import ChoiceMapBuilder as C
 from .data_driven import data_driven_size_and_position
 from .init_proposal import init_proposal, init_choicemap_translator
 # NOTE: step proposal is now simple, needs to be bootom-up + top-down
-from .step_proposal import simple_step_proposal_from_prior, simple_step_choicemap_translator
+from .step_proposal import simple_step_proposal, simple_step_choicemap_translator
 
 from .grid_inference import grid_proposer, GridData, grid_likelihood_evaluator, make_position_grid, find_valid_positions_bool, adaptive_grid_size
 from .jtap_types import JTAPMiceData, JTAPMiceParams, JTAPMiceInference, JTAPMiceDataAllTrials, PredictionData, TrackingData, WeightData, jtap_mice_data_to_numpy
@@ -23,7 +23,7 @@ from jtap_mice.utils import effective_sample_size, init_step_concat, slice_pt, m
 init_proposer= jax.vmap(init_proposal.propose, in_axes = (0,None))
 init_choicemap_merger = jax.vmap(init_choicemap_translator, in_axes = (0, None))
 # step_proposer= jax.vmap(step_proposal.propose, in_axes = (0,(None,None,None,0,0,0,1,None)))
-step_proposer= jax.vmap(simple_step_proposal_from_prior.propose, in_axes = (0,(None,0,0)))
+step_proposer= jax.vmap(simple_step_proposal.propose, in_axes = (0,(None,0,0)))
 # step_proposal_assessor = jax.vmap(step_proposal.assess, in_axes = (0,(None,None,None,0,0,0,1,None)))
 # step_choicemap_merger = jax.vmap(step_choicemap_translator, in_axes = (0,0,None))
 step_choicemap_merger = jax.vmap(simple_step_choicemap_translator, in_axes = (0,0,None))

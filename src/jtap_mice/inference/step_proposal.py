@@ -285,7 +285,7 @@ class SimpleStepProposalRetval(NamedTuple):
     hit_boundary: jnp.ndarray
 
 @gen
-def simple_step_proposal_from_prior(mi, mo, bottom_up_proposed_x):
+def simple_step_proposal(mi, mo, bottom_up_proposed_x):
 
     epsilon = jnp.float32(1e-5)
 
@@ -296,8 +296,14 @@ def simple_step_proposal_from_prior(mi, mo, bottom_up_proposed_x):
     current_direction = mo.direction
     current_x = mo.x
 
-    step_prop_speed = genjax.truncated_normal(current_speed, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
-    step_prop_direction = direction_flip_distribution(current_direction, mi.proposal_direction_flip_prob) @ "direction"
+    # if the bottom up x is in the opposite direction of the current x, then we sample a direction flip
+    bottom_up_direction = bottom_up_proposed_x - current_x
+    has_flipped_direction = jnp.not_equal(jnp.sign(bottom_up_direction), jnp.sign(current_direction))
+    proposed_direction_flip_prob = jnp.where(has_flipped_direction, jnp.float32(1.0), jnp.float32(0.0))
+    proposed_speed_mean = jnp.abs(bottom_up_proposed_x - current_x)
+
+    step_prop_speed = genjax.truncated_normal(proposed_speed_mean, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
+    step_prop_direction = direction_flip_distribution(current_direction, proposed_direction_flip_prob) @ "direction"
     step_prop_x = bottom_up_proposed_x
 
     is_switching_timestep = jnp.not_equal(step_prop_direction, current_direction)
