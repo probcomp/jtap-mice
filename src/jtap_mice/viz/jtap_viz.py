@@ -68,10 +68,8 @@ def animate_jtap_mice_predictions(
     image_scale=4, 
     max_particles_to_show=None, 
     stimulus=None,
-    scn_dot_min_size=32, 
-    scn_dot_max_size=210,
-    pred_dot_min_size=25, 
-    pred_dot_max_size=120,
+    scn_dot_size=50, 
+    pred_dot_size=50,
     line_thick_min=2.7,
     line_thick_max=10.5,
     use_tqdm=True,
@@ -173,15 +171,16 @@ def animate_jtap_mice_predictions(
     plt.subplots_adjust(left=0.16, right=0.99, top=0.90, bottom=0.01)
 
     ax_pred.set_title("Trajectory and Future Predictions")
-    ax_scene.set_title("Ball center position (Black dots sized by SMC weights) over RGB image")
+    ax_scene.set_title("Ball center position (Black dots with alpha by SMC weights) over RGB image")
     ax_belief.set_title("LR Belief (prob)")
 
     import matplotlib.patches as mpatches
 
-    scn_dots = ax_scene.scatter(
-        [], [], s=[], c='black', alpha=1,
-        edgecolors='none', linewidths=0, zorder=3
-    )
+    # Create individual scatter plots for each particle to control alpha separately
+    scn_dots = []
+    for _ in range(len(sample_idx)):
+        dot = ax_scene.scatter([], [], s=scn_dot_size, c='black', alpha=1.0, edgecolors='none', linewidths=0, zorder=3)
+        scn_dots.append(dot)
 
     img_artist = ax_scene.imshow(
         np.zeros_like(rgb_vid[0]), origin="upper", animated=True, zorder=0, extent=(0, W, H, 0)
@@ -203,23 +202,27 @@ def animate_jtap_mice_predictions(
         right_barrier_x, color='k', linestyle=':', linewidth=3, alpha=0.65, zorder=5, animated=True
     )
 
-    # Store historical positions and sizes for each particle
-    historical_positions = {i: {'x': [], 'y': [], 'sizes': []} for i in range(len(sample_idx))}
+    # Store historical positions and alphas for each particle
+    historical_positions = {i: {'x': [], 'y': [], 'alphas': []} for i in range(len(sample_idx))}
 
-    # Use orange lines for predictions instead of yellow
+    # Use orange lines for predictions instead of yellow - keep constant width
     lines = []
     for _ in range(len(sample_idx)):
-        line, = ax_pred.plot([], [], lw=line_thick_min, color='#FFD700', alpha=0.8, zorder=2)  # dark yellow
+        line, = ax_pred.plot([], [], lw=line_thick_max, color='#FFD700', alpha=0.8, zorder=2)  # dark yellow
         lines.append(line)
     
     # Create scatter plots for historical positions (one per particle)
     historical_dots = []
     for _ in range(len(sample_idx)):
-        dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=1, edgecolors='none', linewidths=0)
+        dots = ax_pred.scatter([], [], s=pred_dot_size, c='black', alpha=1.0, zorder=1, edgecolors='none', linewidths=0)
         historical_dots.append(dots)
     
-    # Current position dots
-    pred_dots = ax_pred.scatter([], [], s=[], c='black', alpha=1.0, zorder=3, edgecolors='none', linewidths=0)
+    # Current position dots - create individual scatter plots for each particle
+    pred_dots = []
+    for _ in range(len(sample_idx)):
+        dot = ax_pred.scatter([], [], s=pred_dot_size, c='black', alpha=1.0, zorder=3, edgecolors='none', linewidths=0)
+        pred_dots.append(dot)
+
     bar_beliefs = ax_belief.bar(['Left', 'Right', 'Unc.'], [0, 0, 0], color=['#3399FF', '#FF9933', '#C0C0C0'])
 
     ax_pred.set_xlabel('X pos')
@@ -258,15 +261,10 @@ def animate_jtap_mice_predictions(
         w = np.exp(w)
         return w / np.sum(w)
 
-    def compute_dot_sizes(weights, min_size, max_size):
+    def compute_alphas(weights, min_alpha=0.1, max_alpha=1.0):
         wnorm = normalize_weights(weights)
-        sizes = min_size + (max_size - min_size) * wnorm
-        return sizes
-
-    def compute_line_widths(weights, min_width, max_width):
-        wnorm = normalize_weights(weights)
-        ws = min_width + (max_width - min_width) * wnorm
-        return ws
+        alphas = min_alpha + (max_alpha - min_alpha) * wnorm
+        return alphas
 
     anim_progress = {'bar': None, 'last_frame': -1}
 
@@ -325,30 +323,38 @@ def animate_jtap_mice_predictions(
         x_pix_center = tx_samp_center * (W / Wscene)
         y_pix = np.ones_like(x_pix_center) * (H / 2)
 
-        sizes_scn = compute_dot_sizes(tw_samp, scn_dot_min_size, scn_dot_max_size)
-        scn_dots.set_offsets(np.stack([x_pix_center, y_pix], axis=1))
-        scn_dots.set_sizes(sizes_scn)
+        alphas_scn = compute_alphas(tw_samp)
+        for i, dot in enumerate(scn_dots):
+            if i < len(x_pix_center):
+                dot.set_offsets([[x_pix_center[i], y_pix[i]]])
+                dot.set_alpha(alphas_scn[i])
+            else:
+                dot.set_offsets(np.empty((0, 2)))
 
-        # Compute current dot sizes for pred_dots
-        current_dot_sizes = compute_dot_sizes(tw_samp, pred_dot_min_size, pred_dot_max_size)
+        # Compute current dot alphas for pred_dots
+        current_dot_alphas = compute_alphas(tw_samp)
 
-        # Update historical positions for each particle - store the size from this timestep
+        # Update historical positions for each particle - store the alpha from this timestep
         for p_idx in range(len(s_idx)):
             historical_positions[p_idx]['x'].append(tx_samp_center[p_idx])
             historical_positions[p_idx]['y'].append(t)
-            historical_positions[p_idx]['sizes'].append(current_dot_sizes[p_idx])
+            historical_positions[p_idx]['alphas'].append(current_dot_alphas[p_idx])
 
         # Update historical dots for each particle
         for p_idx in range(len(s_idx)):
             if len(historical_positions[p_idx]['x']) > 1:  # Only show history if we have more than current point
                 hist_x = historical_positions[p_idx]['x'][:-1]  # All but current
                 hist_y = historical_positions[p_idx]['y'][:-1]  # All but current
-                hist_sizes = historical_positions[p_idx]['sizes'][:-1]  # All but current - use stored sizes
-                historical_dots[p_idx].set_offsets(np.stack([hist_x, hist_y], axis=1))
-                historical_dots[p_idx].set_sizes(hist_sizes)
+                hist_alphas = historical_positions[p_idx]['alphas'][:-1]  # All but current - use stored alphas
+                if len(hist_x) > 0:
+                    # For historical dots, we'll use the average alpha or the last alpha
+                    avg_alpha = np.mean(hist_alphas) if len(hist_alphas) > 0 else 0.5
+                    historical_dots[p_idx].set_offsets(np.stack([hist_x, hist_y], axis=1))
+                    historical_dots[p_idx].set_alpha(avg_alpha)
+                else:
+                    historical_dots[p_idx].set_offsets(np.empty((0, 2)))
             else:
                 historical_dots[p_idx].set_offsets(np.empty((0, 2)))
-                historical_dots[p_idx].set_sizes([])
 
         # Now assemble predictions starting from current time t
         xs_pred_t = pred_x_full[t] + ball_radius_scene  # (plot_pred_steps_with_track, n_sel_particles)
@@ -356,10 +362,11 @@ def animate_jtap_mice_predictions(
         ys_pred_t = (t + np.arange(plot_pred_steps_with_track))[:, None] * np.ones((1, len(s_idx)))  # (plot_pred_steps_with_track, n_sel_particles)
 
         # For the current position scatter (just current time t)
-        pred_dots.set_offsets(np.stack([xs_pred_t[0], np.full_like(xs_pred_t[0], t)], axis=1))
-        pred_dots.set_sizes(current_dot_sizes)
+        for p_idx in range(len(s_idx)):
+            pred_dots[p_idx].set_offsets([[xs_pred_t[0, p_idx], t]])
+            pred_dots[p_idx].set_alpha(current_dot_alphas[p_idx])
 
-        line_ws = compute_line_widths(tw_samp, line_thick_min, line_thick_max)
+        line_alphas = compute_alphas(tw_samp, min_alpha=0.0, max_alpha=0.9)
 
         # For each displayed particle, mask its predictions if predicted ball *center* has reached a radius away from either barrier
         for li, p_idx in enumerate(range(len(s_idx))):
@@ -430,8 +437,7 @@ def animate_jtap_mice_predictions(
                     ys_draw = ys_draw[mask]
 
             lines[li].set_data(xs_draw, ys_draw)
-            lines[li].set_linewidth(line_ws[li])
-            lines[li].set_alpha(0.88)
+            lines[li].set_alpha(line_alphas[li])
 
         left_p, right_p, unc_p = lr_belief_probs[t]
         for i, bar in enumerate(bar_beliefs):
@@ -447,7 +453,7 @@ def animate_jtap_mice_predictions(
         for ax in [ax_pred, ax_scene]:
             ax.set_title(ax.get_title().split('\n')[0] + f"\nframe {t + 1}/{num_frames}", fontsize=26)
 
-        return [img_artist, scn_dots] + lines + [pred_dots] + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line] + historical_dots
+        return [img_artist] + scn_dots + lines + pred_dots + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line] + historical_dots
 
     anim = animation.FuncAnimation(
         fig, animate, frames=num_frames, interval=(1000/fps), blit=True, repeat=True
