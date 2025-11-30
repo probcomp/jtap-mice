@@ -29,11 +29,16 @@ def load_left_right_stimulus(
     skip_t=1,
     rgb_only=False,
     trial_number=None,
+    inject_occlusion=None,
 ):
     """
     Loads a left-right (or mice) stimulus. For new "mice" multi-trial JSONs, supply trial_number.
     Applies temporal downsampling (frame skipping) via skip_t to all frame-wise arrays.
     fps ALWAYS remains the original fps (NOT downsampled fps in structure).
+    
+    Args:
+        inject_occlusion: Optional 2D array/list of shape (N_OCC, 2) where each row is [x_left, length]
+                         representing occluders. x_left is the left edge position, length is the width.
     """
     # Only support the new-style JSON with trial structure
     if not (os.path.isfile(stimulus_path) and stimulus_path.endswith('.json')):
@@ -74,6 +79,19 @@ def load_left_right_stimulus(
     ball_bottom_y = 0.0
     ball_center_y = diameter / 2.0
 
+    # Validate inject_occlusion if provided
+    if inject_occlusion is not None:
+        inject_occlusion = np.asarray(inject_occlusion, dtype=np.float32)
+        if inject_occlusion.ndim != 2 or inject_occlusion.shape[1] != 2:
+            raise ValueError(f"inject_occlusion must be a 2D array with shape (N_OCC, 2), got shape {inject_occlusion.shape}")
+        
+        # Check bounds for each occluder
+        for i, (x_left, length) in enumerate(inject_occlusion):
+            if x_left < 0 or x_left > scene_width:
+                raise ValueError(f"Occluder {i}: left edge position {x_left} is outside scene bounds [0, {scene_width}]")
+            if x_left + length < 0 or x_left + length > scene_width:
+                raise ValueError(f"Occluder {i}: right edge position {x_left + length} is outside scene bounds [0, {scene_width}]")
+
     # construct ground_truth_positions (T, 2): [x, y=ball_bottom_y]
     ground_truth_positions_full = np.stack([positions - (diameter/2.0), np.full_like(positions, ball_bottom_y)], axis=1)
 
@@ -85,11 +103,34 @@ def load_left_right_stimulus(
         is_switching_trial = len(sign_changes) > 0
     else:
         is_switching_trial = False
-    is_occlusion_trial = False
+    
+    # Set occlusion trial flag based on whether occlusion is injected
+    is_occlusion_trial = inject_occlusion is not None
 
     # FULL per-frame arrays (frame-count == positions.shape[0])
     partially_occluded_bool_full = np.zeros(len(positions), dtype=bool)
     fully_occluded_bool_full = np.zeros(len(positions), dtype=bool)
+
+    # If occlusion is injected, compute occlusion masks
+    if inject_occlusion is not None:
+        ball_radius = diameter / 2.0
+        for frame_idx, ball_center_x in enumerate(positions):
+            ball_left = ball_center_x - ball_radius
+            ball_right = ball_center_x + ball_radius
+            
+            for x_left, length in inject_occlusion:
+                occ_right = x_left + length
+                
+                # Check for overlap between ball and occluder
+                overlap_left = max(ball_left, x_left)
+                overlap_right = min(ball_right, occ_right)
+                
+                if overlap_left < overlap_right:  # There is overlap
+                    overlap_fraction = (overlap_right - overlap_left) / diameter
+                    if overlap_fraction >= 1.0:
+                        fully_occluded_bool_full[frame_idx] = True
+                    else:
+                        partially_occluded_bool_full[frame_idx] = True
 
     # Apply ::skip_t everywhere
     positions_sub = positions[::skip_t]
@@ -105,6 +146,7 @@ def load_left_right_stimulus(
         pixel_density=pixel_density,
         skip_t=1,  # already applied skip_t to positions, so pass-through 1 here
         ball_center_y=ball_center_y,
+        inject_occlusion=inject_occlusion,
     )
     num_frames = len(rgb_frames)
 
@@ -139,12 +181,16 @@ def create_mice_video_from_positions(
     pixel_density=10,
     skip_t=1,
     ball_center_y=None,
+    inject_occlusion=None,
 ):
     """
     Create video and discrete_obs for the 'mice' left-right type stimulus.
     - positions are X locations of the BALL CENTER.
     - Y will be constant and centered unless specified.
     skip_t in this function should always be 1; frame skipping should be done before passing to this function.
+    
+    Args:
+        inject_occlusion: Optional 2D array of shape (N_OCC, 2) where each row is [x_left, length]
     """
     # Quantize dimensions
     frame_width = int(np.round(scene_width * pixel_density))
@@ -173,7 +219,19 @@ def create_mice_video_from_positions(
         rgb_frames[i, y_min:y_max, x_min:x_max][circle_mask, 2] = 255
         rgb_frames[i, y_min:y_max, x_min:x_max][circle_mask, :2] = 0
         # Discrete mask: code 2 for ball
-        discrete_obs[i, y_min:y_max, x_min:x_max][circle_mask] = 2  # No occluders yet
+        discrete_obs[i, y_min:y_max, x_min:x_max][circle_mask] = 2  # Ball overwrites occluders
+
+    if inject_occlusion is not None:
+        for x_left, length in inject_occlusion:
+            occ_left_px = int(np.round(x_left * pixel_density))
+            occ_right_px = int(np.round((x_left + length) * pixel_density))
+            occ_left_px = max(0, occ_left_px)
+            occ_right_px = min(frame_width, occ_right_px)
+            
+            # Draw occluder for all frames (gray color, discrete value 1)
+            for i in range(T):
+                rgb_frames[i, :, occ_left_px:occ_right_px] = [128, 128, 128]  # gray
+                discrete_obs[i, :, occ_left_px:occ_right_px] = 1  # occluder code
 
     return rgb_frames, discrete_obs
 
