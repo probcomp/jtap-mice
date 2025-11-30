@@ -280,45 +280,109 @@ class SimpleStepProposalRetval(NamedTuple):
     step_prop_speed: jnp.ndarray
     step_prop_direction: jnp.ndarray
     step_prop_x: jnp.ndarray
+    use_top_down_proposal: jnp.ndarray
+    use_bottom_up_proposal: jnp.ndarray
+    switch_branch: jnp.ndarray
+    prob_use_bottom_up: jnp.ndarray
     is_outlier_step: jnp.ndarray
     is_switching_timestep: jnp.ndarray
     hit_boundary: jnp.ndarray
 
 @gen
-def simple_step_proposal(mi, mo, bottom_up_proposed_x):
+def top_down_step_proposal(mi, top_down_next_speed, top_down_next_direction, top_down_next_x):
+    epsilon = jnp.float32(1e-5)
+    diameter = mi.diameter
+    scene_length = mi.scene_dim[0]
+
+    step_prop_speed = genjax.truncated_normal(top_down_next_speed, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
+    step_prop_direction = direction_flip_distribution(top_down_next_direction, mi.proposal_direction_flip_prob) @ "direction"
+    # NOTE: Need to sample the position to make this a valid proposal (not used for grid proposal)
+    step_prop_x = top_down_next_x + (step_prop_speed * step_prop_direction)
+    step_prop_x = jnp.clip(step_prop_x, -diameter + epsilon, scene_length - diameter - epsilon)
+    return step_prop_speed, step_prop_direction, step_prop_x
+
+@gen
+def bottom_up_step_proposal(mi, bottom_up_speed_mean, bottom_up_direction, bottom_up_proposed_x, bottom_up_direction_flip_prob):
+    step_prop_speed = genjax.truncated_normal(bottom_up_speed_mean, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
+    step_prop_direction = direction_flip_distribution(bottom_up_direction, bottom_up_direction_flip_prob) @ "direction"
+    # NOTE: No need to sample the position as it is already sampled in the grid inference
+    # No need to clip within valid bounds, that is already accounted for in the grid inference
+    step_prop_x = bottom_up_proposed_x
+    return step_prop_speed, step_prop_direction, step_prop_x
+
+step_proposal_switch = genjax.switch(
+    top_down_step_proposal,
+    bottom_up_step_proposal
+)
+
+@gen
+def step_proposal(mi, mo, bottom_up_proposed_x, num_target_pixels):
 
     epsilon = jnp.float32(1e-5)
-
     # sample outlier to always be False
     is_outlier_step = genjax.flip(jnp.float32(0.0)) @ "is_outlier_step"
 
-    current_speed = mo.speed
-    current_direction = mo.direction
-    current_x = mo.x
-
+    current_speed, current_direction, current_x = mo.speed, mo.direction, mo.x
+    scene_length = mi.scene_dim[0]
+    ##################################################################################
+    # Bottom Up Proposal Computations
+    ##################################################################################
     # if the bottom up x is in the opposite direction of the current x, then we sample a direction flip
-    bottom_up_direction = bottom_up_proposed_x - current_x
-    has_flipped_direction = jnp.not_equal(jnp.sign(bottom_up_direction), jnp.sign(current_direction))
-    proposed_direction_flip_prob = jnp.where(has_flipped_direction, jnp.float32(1.0), jnp.float32(0.0))
-    proposed_speed_mean = jnp.abs(bottom_up_proposed_x - current_x)
+    shift_in_x = bottom_up_proposed_x - current_x
+    bottom_up_has_flipped_direction = jnp.not_equal(jnp.sign(shift_in_x), jnp.sign(current_direction))
+    bottom_up_direction_flip_prob = jnp.where(bottom_up_has_flipped_direction, jnp.float32(1.0), jnp.float32(0.0))
+    bottom_up_speed_mean = jnp.abs(bottom_up_proposed_x - current_x)
+    bottom_up_direction = current_direction
+    ##################################################################################
+    # Top Down Proposal Computations
+    ##################################################################################
 
-    step_prop_speed = genjax.truncated_normal(proposed_speed_mean, mi.σ_speed_stepprop, jnp.float32(0.), mi.max_speed) @ "speed"
-    step_prop_direction = direction_flip_distribution(current_direction, proposed_direction_flip_prob) @ "direction"
-    step_prop_x = bottom_up_proposed_x
+    # top down computations use the current state (x, speed, direction) to simulate forward
+    # NOTE: The top_down_next_x will be adjusted based on the sampled speed and direction
+    # before smapling the position
+    top_down_next_x = current_x
+    top_down_next_direction = current_direction
+    top_down_next_speed = current_speed
+
+    ##################################################################################
+    # Proposal Strategy Selection and Execution
+    ##################################################################################
+    diameter, image_discretization = mo.diameter, mi.image_discretization
+    expected_diameter_pixels = diameter / image_discretization
+    expected_num_obj_pixels = jnp.int32(jnp.ceil(jnp.pi * ((expected_diameter_pixels / 2) ** 2)))
+
+    prob_use_bottom_up = jnp.clip((num_target_pixels / expected_num_obj_pixels), jnp.float32(0.0), jnp.float32(1.0))
+    use_bottom_up_proposal = genjax.flip(prob_use_bottom_up) @ "use_bottom_up_proposal"
+    use_top_down_proposal = jnp.logical_not(use_bottom_up_proposal)
+
+    switch_branch = jnp.where(
+        use_top_down_proposal, # this step is probabilistic
+        jnp.int32(0),
+        jnp.int32(1)
+    )
+
+    step_prop_speed, step_prop_direction, step_prop_x = step_proposal_switch(switch_branch, 
+        (mi, top_down_next_speed, top_down_next_direction, top_down_next_x),
+        (mi, bottom_up_speed_mean, bottom_up_direction, bottom_up_proposed_x, bottom_up_direction_flip_prob)
+    ) @ 'prop_switch' 
 
     is_switching_timestep = jnp.not_equal(step_prop_direction, current_direction)
-    hit_boundary = (step_prop_x <= (epsilon)) | (step_prop_x >= (mi.scene_dim[0] - mo.diameter - epsilon))
+    hit_boundary = (step_prop_x <= (-diameter + epsilon)) | (step_prop_x >= (scene_length - diameter - epsilon))
 
     return SimpleStepProposalRetval(
         step_prop_speed=step_prop_speed,
         step_prop_direction=step_prop_direction,
         step_prop_x=step_prop_x,
+        use_top_down_proposal=use_top_down_proposal,
+        use_bottom_up_proposal=use_bottom_up_proposal,
+        switch_branch=switch_branch,
+        prob_use_bottom_up=prob_use_bottom_up,
         is_outlier_step=is_outlier_step,
         is_switching_timestep=is_switching_timestep,
         hit_boundary=hit_boundary
     )
 
-def simple_step_choicemap_translator(
+def step_choicemap_translator(
     cm_step_proposal,
     cm_grid_inference_proposal,
     cm_obs
@@ -328,35 +392,15 @@ def simple_step_choicemap_translator(
     grid inference proposal, and observation.
     """
     step_cm = (
-        cm_step_proposal
+        cm_step_proposal('prop_switch')
         .merge(cm_grid_inference_proposal)
+        .merge(C['is_outlier_step'].set(
+                cm_step_proposal['is_outlier_step']
+            )
         )
+    )
     obs_cm = cm_obs['obs']
     return C.d({
         'step': step_cm,
         'obs': obs_cm,
     })
-
-# def step_choicemap_translator(
-#     cm_data_driven_proposal,
-#     cm_grid_inference_proposal,
-#     cm_obs
-# ):
-#     """
-#     Translates and merges choicemaps for the step proposal,
-#     grid inference proposal, and observation.
-#     """
-#     step_cm = (
-#         cm_data_driven_proposal('prop_switch')
-#         .merge(cm_grid_inference_proposal)
-#         .merge(
-#             C['is_outlier_step'].set(
-#                 cm_data_driven_proposal['proposal_is_outlier']
-#             )
-#         )
-#     )
-#     obs_cm = cm_obs['obs']
-#     return C.d({
-#         'step': step_cm,
-#         'obs': obs_cm,
-#     })

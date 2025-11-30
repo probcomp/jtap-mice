@@ -9,8 +9,7 @@ from genjax import ChoiceMapBuilder as C
 
 from .data_driven import data_driven_size_and_position
 from .init_proposal import init_proposal, init_choicemap_translator
-# NOTE: step proposal is now simple, needs to be bootom-up + top-down
-from .step_proposal import simple_step_proposal, simple_step_choicemap_translator
+from .step_proposal import step_proposal, step_choicemap_translator
 
 from .grid_inference import grid_proposer, GridData, grid_likelihood_evaluator, make_position_grid, find_valid_positions_bool, adaptive_grid_size
 from .jtap_types import JTAPMiceData, JTAPMiceParams, JTAPMiceInference, JTAPMiceDataAllTrials, PredictionData, TrackingData, WeightData, jtap_mice_data_to_numpy
@@ -22,11 +21,9 @@ from jtap_mice.utils import effective_sample_size, init_step_concat, slice_pt, m
 # Define all the jitted functions
 init_proposer= jax.vmap(init_proposal.propose, in_axes = (0,None))
 init_choicemap_merger = jax.vmap(init_choicemap_translator, in_axes = (0, None))
-# step_proposer= jax.vmap(step_proposal.propose, in_axes = (0,(None,None,None,0,0,0,1,None)))
-step_proposer= jax.vmap(simple_step_proposal.propose, in_axes = (0,(None,0,0)))
-# step_proposal_assessor = jax.vmap(step_proposal.assess, in_axes = (0,(None,None,None,0,0,0,1,None)))
-# step_choicemap_merger = jax.vmap(step_choicemap_translator, in_axes = (0,0,None))
-step_choicemap_merger = jax.vmap(simple_step_choicemap_translator, in_axes = (0,0,None))
+step_proposer= jax.vmap(step_proposal.propose, in_axes = (0,(None,0,0,None)))
+step_proposal_assessor = jax.vmap(step_proposal.assess, in_axes = (0,(None,0,0,None)))
+step_choicemap_merger = jax.vmap(step_choicemap_translator, in_axes = (0,0,None))
 initializer = jax.vmap(full_init_model.importance, in_axes = (0,0,None))
 stepper = jax.vmap(full_step_model.assess, in_axes = (0,(0,None,None)))
 simulator = jax.vmap(stepper_model.simulate, in_axes = (0,(0,None,None)))
@@ -83,7 +80,7 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         ##################################################################################
         _, x_grid_center, _, obs_is_fully_hidden, num_obj_pixels = data_driven_size_and_position(discrete_obs[t], mi.image_discretization)
 
-        grid_size = adaptive_grid_size(num_obj_pixels, mi.grid_size_bounds)
+        grid_size = adaptive_grid_size(num_obj_pixels, mi.grid_size_bounds, mi.diameter, mi.image_discretization)
 
         # step model args
         inference_mode_bool = jnp.bool_(True) # INFERENCE MODE
@@ -132,20 +129,15 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         ##################################################################################
 
         # Propose new step particle extensions
-        step_proposal_args = (mi, mos, grid_proposed_xs)
+        step_proposal_args = (mi, mos, grid_proposed_xs, num_obj_pixels)
         step_proposed_choices, step_prop_weights_regular, step_prop_retval = step_proposer(data_driven_proposal_keys, step_proposal_args)
 
-        # NOTE: Disabling this now while we are not using the switch
         #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # # get the weights of the alternative switch branch since this is a mixture proposal
-        # use_bottom_up_proposal = step_prop_retval.use_bottom_up_proposal
-        # use_top_down_proposal = step_prop_retval.use_top_down_proposal
-        # alternative_use_bottom_up_proposal = jnp.logical_not(use_bottom_up_proposal)
-        # alternative_proposal_choices = step_proposed_choices.at['use_bottom_up_proposal'].set(alternative_use_bottom_up_proposal)
-        # alternative_proposal_weights, _ = step_proposal_assessor(alternative_proposal_choices, step_proposal_args)
-        # NOTE: delete below line
-        alternative_proposal_weights = jnp.zeros_like(step_prop_weights_regular)
-        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # get the weights of the alternative switch branch since this is a mixture proposal
+        use_bottom_up_proposal = step_prop_retval.use_bottom_up_proposal
+        use_top_down_proposal = step_prop_retval.use_top_down_proposal
+        alternative_proposal_choices = step_proposed_choices.at['use_bottom_up_proposal'].set(jnp.logical_not(use_bottom_up_proposal))
+        alternative_proposal_weights, _ = step_proposal_assessor(alternative_proposal_choices, step_proposal_args)
 
         # logsumpexp the two proposal weights
         step_prop_weights = jax.nn.logsumexp(jnp.stack([step_prop_weights_regular, alternative_proposal_weights], axis = 0), axis = 0)
@@ -160,9 +152,8 @@ def run_jtap_(initial_key, mi, ESS_proportion, discrete_obs, max_inference_steps
         step_inference_chm_merged = step_choicemap_merger(step_proposed_choices, position_choices, step_obs_chm)
         incremental_weights, step_mos = stepper(step_inference_chm_merged, step_model_args)
 
-        # NOTE: Disabling this now while we are not using the TOP-DOWN PROPOSAL for POSITION
         #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # grid_weights = jnp.where(use_top_down_proposal, jnp.zeros_like(grid_weights), grid_weights)
+        grid_weights = jnp.where(use_top_down_proposal, jnp.zeros_like(grid_weights), grid_weights)
         #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         # Update weights

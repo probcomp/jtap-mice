@@ -20,15 +20,6 @@ def stepper_model(mo, mi, inference_mode_bool):
     pos_noise = jnp.where(inference_mode_bool, mi.σ_pos_model, mi.σ_pos_simulation)
     speed_noise = jnp.where(inference_mode_bool, mi.σ_speed_model, mi.σ_speed_simulation)
 
-    scene_length = mi.scene_dim[0]
-
-    # this one line is the "physics" of the model
-    x_mean = x + (speed * direction)
-
-    # we have to make sure that the ball does not go out of bounds. If it does, then we record it in the state and clip it to the boundary (CLIP ONLY FOR INFERENCE MODE)
-    epsilon = jnp.float32(1e-5)
-    x_mean = jnp.where(inference_mode_bool, jnp.clip(x_mean, epsilon, scene_length - diameter - epsilon), x_mean)
-
     # sample an outlier probability
     is_outlier_step = genjax.flip(mi.model_outlier_prob) @ "is_outlier_step"
 
@@ -38,10 +29,18 @@ def stepper_model(mo, mi, inference_mode_bool):
     speed_noise = jnp.where(is_outlier_step, jnp.float32(1e5), speed_noise)
     direction_flip_prob = jnp.where(is_outlier_step, jnp.float32(0.5), direction_flip_prob)
     
-    new_x = genjax.truncated_normal(x_mean, pos_noise, -diameter, scene_length) @ 'x'
-    new_y = y
     new_speed = genjax.truncated_normal(speed, speed_noise, jnp.float32(0.), mi.max_speed) @ "speed"
     new_direction = direction_flip_distribution(direction, direction_flip_prob) @ "direction"
+
+    scene_length = mi.scene_dim[0]
+    # this one line is the "physics" of the model
+    x_mean = x + (new_speed * new_direction)
+    # we have to make sure that the ball does not go out of bounds. If it does, then we record it in the state and clip it to the boundary (CLIP ONLY FOR INFERENCE MODE)
+    epsilon = jnp.float32(1e-5)
+    x_mean = jnp.where(inference_mode_bool, jnp.clip(x_mean, -diameter + epsilon, scene_length - epsilon), x_mean)
+
+    new_x = genjax.truncated_normal(x_mean, pos_noise, -diameter, scene_length) @ 'x'
+    new_y = y
 
     hit_boundary = (new_x <= (epsilon)) | (new_x >= (scene_length - diameter - epsilon))
     is_switching_timestep = jnp.not_equal(new_direction, direction)

@@ -31,7 +31,7 @@ grid_likelihood_evaluator = jax.vmap(
     )
 )
 
-def adaptive_grid_size(num_obj_pixels, grid_size_bounds):
+def adaptive_grid_size(num_obj_pixels, grid_size_bounds, diameter, image_discretization):
     """
     Adaptive grid size based on the number of object pixels. inversely proportional to the number of object pixels.
     Args:
@@ -40,7 +40,9 @@ def adaptive_grid_size(num_obj_pixels, grid_size_bounds):
     Returns:
         Grid size
     """
-    proportion_obj_pixels = num_obj_pixels / 80
+    expected_diameter_pixels = diameter / image_discretization
+    expected_num_obj_pixels = jnp.int32(jnp.ceil(jnp.pi * ((expected_diameter_pixels / 2) ** 2)))
+    proportion_obj_pixels = jnp.clip((num_obj_pixels / expected_num_obj_pixels), jnp.float32(0.0), jnp.float32(1.0))
     grid_size = grid_size_bounds[1] - ((grid_size_bounds[1] - grid_size_bounds[0]) * proportion_obj_pixels)
     return grid_size
 
