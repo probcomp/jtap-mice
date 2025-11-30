@@ -142,6 +142,11 @@ def animate_jtap_mice_predictions(
     diameter = getattr(stimulus, "diameter")
     ball_radius_scene = diameter / 2.0
 
+    # Get occlusion regions from stimulus
+    occlusion_regions = None
+    if hasattr(stimulus, "occlusion_regions"):
+        occlusion_regions = np.array(stimulus.occlusion_regions)  # Shape: (N_OCC, 2)
+
     plt.rcParams.update({
         "font.size": 22,
         "axes.titlesize": 28,
@@ -202,6 +207,30 @@ def animate_jtap_mice_predictions(
         right_barrier_x, color='k', linestyle=':', linewidth=3, alpha=0.65, zorder=5, animated=True
     )
 
+    # Add occlusion regions to the prediction plot
+    occlusion_patches = []
+    if occlusion_regions is not None:
+        for occ_region in occlusion_regions:
+            occ_left, occ_size = occ_region
+            # Full occlusion region (dark gray)
+            full_occ_patch = mpatches.Rectangle(
+                (occ_left, -0.5), occ_size, num_frames + plot_pred_steps,
+                facecolor='gray', alpha=0.2, zorder=0, edgecolor='none'
+            )
+            ax_pred.add_patch(full_occ_patch)
+            occlusion_patches.append(full_occ_patch)
+            
+            # Partial occlusion regions (light gray) - extend by ball radius on each side
+            left_partial_left = occ_left - diameter
+            if left_partial_left >= 0:  # Only add if within scene bounds
+                left_partial_patch = mpatches.Rectangle(
+                    (left_partial_left, -0.5), occ_size + (2 * diameter), num_frames + plot_pred_steps,
+                    facecolor='lightgray', alpha=0.2, zorder=0, edgecolor='none'
+                )
+                ax_pred.add_patch(left_partial_patch)
+                occlusion_patches.append(left_partial_patch)
+
+
     # Store historical positions and alphas for each particle
     historical_positions = {i: {'x': [], 'y': [], 'alphas': []} for i in range(len(sample_idx))}
 
@@ -261,7 +290,7 @@ def animate_jtap_mice_predictions(
         w = np.exp(w)
         return w / np.sum(w)
 
-    def compute_alphas(weights, min_alpha=0.1, max_alpha=1.0):
+    def compute_alphas(weights, min_alpha=0.0, max_alpha=1.0):
         wnorm = normalize_weights(weights)
         alphas = min_alpha + (max_alpha - min_alpha) * wnorm
         return alphas
@@ -366,7 +395,7 @@ def animate_jtap_mice_predictions(
             pred_dots[p_idx].set_offsets([[xs_pred_t[0, p_idx], t]])
             pred_dots[p_idx].set_alpha(current_dot_alphas[p_idx])
 
-        line_alphas = compute_alphas(tw_samp, min_alpha=0.0, max_alpha=0.9)
+        line_alphas = compute_alphas(tw_samp)
 
         # For each displayed particle, mask its predictions if predicted ball *center* has reached a radius away from either barrier
         for li, p_idx in enumerate(range(len(s_idx))):
@@ -453,7 +482,7 @@ def animate_jtap_mice_predictions(
         for ax in [ax_pred, ax_scene]:
             ax.set_title(ax.get_title().split('\n')[0] + f"\nframe {t + 1}/{num_frames}", fontsize=26)
 
-        return [img_artist] + scn_dots + lines + pred_dots + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line] + historical_dots
+        return [img_artist] + scn_dots + lines + pred_dots + list(bar_beliefs) + [obs_border_rect, left_barrier_line, right_barrier_line] + historical_dots + occlusion_patches
 
     anim = animation.FuncAnimation(
         fig, animate, frames=num_frames, interval=(1000/fps), blit=True, repeat=True

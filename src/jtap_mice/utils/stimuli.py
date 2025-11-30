@@ -1,6 +1,6 @@
 import numpy as np
 import json
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, List
 import os
 
 class MouseData(NamedTuple):
@@ -13,6 +13,7 @@ class JTAPMiceStimulus(NamedTuple):
     discrete_obs: np.ndarray
     is_occlusion_trial: bool
     is_switching_trial: bool
+    occlusion_regions: List
     scene_length: float
     partially_occluded_bool: np.ndarray
     fully_occluded_bool: np.ndarray
@@ -160,6 +161,7 @@ def load_left_right_stimulus(
             trial_number=int(trial_key),
             mouse_data=mouse_data,
             discrete_obs=discrete_obs,
+            occlusion_regions=inject_occlusion,
             is_occlusion_trial=is_occlusion_trial,
             is_switching_trial=is_switching_trial,
             scene_length=scene_length,
