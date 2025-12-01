@@ -10,6 +10,7 @@ assets/TrialMovies/
 
 *.pkl
 !assets/*.pkl
+!assets/**/*.json
 
 *.DS_Store
 

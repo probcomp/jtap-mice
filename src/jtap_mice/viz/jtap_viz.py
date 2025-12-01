@@ -73,7 +73,7 @@ def animate_jtap_mice_predictions(
     line_thick_min=2.7,
     line_thick_max=10.5,
     use_tqdm=True,
-    fps=10,
+    fps=None,
     return_html=True
 ):
     """
@@ -138,6 +138,11 @@ def animate_jtap_mice_predictions(
         raise ValueError("Could not find rgb frames in stimulus.")
     H, W = rgb_vid.shape[1:3]
     n_time = rgb_vid.shape[0]
+
+    if fps is None:
+        fps = stimulus.fps / stimulus.skip_t
+    else:
+        raise ValueError("fps must be provided if stimulus.fps and stimulus.skip_t are not provided")
 
     diameter = getattr(stimulus, "diameter")
     ball_radius_scene = diameter / 2.0
