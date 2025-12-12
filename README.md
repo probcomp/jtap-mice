@@ -12,6 +12,8 @@
 
 #### Setup
 
+**Do not run this inside a conda or a virtual environment (venv, virtualenv or pyenv. Not even pixi) UV is meant to replace all of this**
+
 Follow the steps below to get `jtap` running on your machine.
 
 1. **Clone the repository**:
@@ -36,8 +38,13 @@ Follow the steps below to get `jtap` running on your machine.
    ```bash
    uv sync --extra cpu
    ```
+4. **Install Rerun Locally (If not on a VM and you have a Display)**:
 
-4. **Verify your installation**:
+```bash
+uv run rerun
+```
+
+1. **Verify your installation**:
    ```bash
    uv run python -c "import jax; print('JAX devices:', jax.devices())"
    ```
