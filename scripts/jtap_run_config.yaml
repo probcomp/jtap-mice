@@ -1,0 +1,44 @@
+# JTAP run configuration for run_jtap_single_json.py
+# All values can be overridden by CLI flags or Python kwargs.
+
+# Paths (override per run)
+stimulus_path: null
+output_dir: "jtap_plots"
+
+# Stimulus / run
+pixel_density: 50
+skip_t: 1
+num_particles: 30
+ESS_proportion: 0.1
+num_jtap_runs: 1
+key_seed: null  # set to int for reproducibility; null = random
+
+# Occlusion: list of [x_left, length] per occluder. null = no occlusion.
+occlusion_regions: null
+
+# ChexModelInput / model (notebook defaults)
+model_outlier_prob: 0.0
+proposal_direction_outlier_tau_deg: 40.0
+proposal_direction_outlier_alpha: 3.5
+sigma_pos_model: 0.5
+sigma_speed_model: 0.075
+model_direction_flip_prob: 0.025
+pixel_corruption_prob: 0.01
+tile_size: 3
+sigma_pixel_spatial: 1.0
+image_power_beta: 0.005
+max_speed: 1.0
+max_num_occ: 5
+num_x_grid: 8
+grid_size_bounds: [0.2, 1.2]
+simulate_every: 1
+sigma_pos_simulation: 0.05
+sigma_speed_simulation: 0.075
+simulation_direction_flip_prob: 0.005
+sigma_pos_initprop: 0.02
+proposal_direction_flip_prob: 0.05
+sigma_speed_stepprop: 0.01
+sigma_pos_stepprop: 0.01
+
+# Plot save (fast save)
+save_dpi: 100

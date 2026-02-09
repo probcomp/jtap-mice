@@ -18,6 +18,23 @@ COLORS = {
     'axis': '#7f8c8d',
 }
 
+def _direction_change_times(stimulus, adjusted_fps, include_start_frame):
+    """Compute times (seconds) where ball direction changes from ground-truth positions."""
+    pos = np.asarray(stimulus.ground_truth_positions[:, 0])
+    if len(pos) < 3:
+        return np.array([])
+    vel = np.diff(pos)
+    # sign change in vel: between vel[i] and vel[i+1] -> first frame with new direction is frame index i+2 (0-based)
+    sign_changes = np.where(np.diff(np.sign(vel)) != 0)[0] + 2
+    T = len(pos)
+    if include_start_frame:
+        valid = (sign_changes >= 0) & (sign_changes < T)
+        return sign_changes[valid].astype(float) / adjusted_fps
+    else:
+        valid = (sign_changes >= 1) & (sign_changes < T)
+        return (sign_changes[valid].astype(float) - 1) / adjusted_fps
+
+
 def jtap_plot_lr_lines(
     lr_beliefs, 
     include_baselines=True, 
@@ -30,17 +47,20 @@ def jtap_plot_lr_lines(
     return_fig=False,
     jtap_run_idx=None,
     plot_stat="mean",
-    include_stimulus=False
+    include_stimulus=False,
+    show_direction_changes=True
 ):
     """
     Plot LEFT/RIGHT beliefs over time. If include_baselines is True,
     show all (model, frozen, decaying) side by side.
     Otherwise, show only 'show' (model/frozen/decaying).
-    New option:
+    Options:
       - show_all_beliefs: If True and multiple runs, plot all lines (thin/semi-transparent).
       - show_std_band: If True, a std band will be rendered (mean/median).
       - plot_stat: "mean" or "median".
       - include_stimulus: If True and stimulus is provided, draw in plot layout.
+      - show_direction_changes: If True and stimulus is provided, draw ground-truth direction
+        changes as a rug at a separate vertical height (below the belief lines).
     """
     if plot_stat not in {"mean", "median"}:
         raise ValueError("plot_stat must be 'mean' or 'median'.")
@@ -259,6 +279,18 @@ def jtap_plot_lr_lines(
                                    color=fillcol, alpha=0.22, zorder=0)
             ax.axhline(y=0, color=COLORS['axis'], linestyle="--", linewidth=0.8, alpha=0.6, zorder=1)
             ax.axhline(y=1, color=COLORS['axis'], linestyle="--", linewidth=0.8, alpha=0.6, zorder=1)
+
+        # Direction changes at a separate vertical height (rug below beliefs)
+        if stimulus is not None and show_direction_changes:
+            adjusted_fps = stimulus.fps / stimulus.skip_t
+            dc_times = _direction_change_times(stimulus, adjusted_fps, include_start_frame)
+            if len(dc_times) > 0:
+                y_rug = -0.06
+                ax.vlines(dc_times, ymin=y_rug - 0.02, ymax=y_rug + 0.02, colors=COLORS['text'], linewidth=1.2, alpha=0.8, zorder=2)
+                ax.scatter(dc_times, np.full_like(dc_times, y_rug), marker="|", s=80, color=COLORS['text'], zorder=2, label="Direction change")
+                ylo, yhi = ax.get_ylim()
+                if ylo > y_rug - 0.04:
+                    ax.set_ylim(bottom=min(ylo, y_rug - 0.08))
 
         if stimulus is not None:
             ax.set_xlabel("Time (s)", fontsize=15, fontweight='medium', color=COLORS['text'], labelpad=8)

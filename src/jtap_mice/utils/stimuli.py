@@ -1,6 +1,6 @@
 import numpy as np
 import json
-from typing import NamedTuple, Optional, List
+from typing import NamedTuple, Optional, List, Tuple
 import os
 
 class MouseData(NamedTuple):
@@ -158,7 +158,7 @@ def load_left_right_stimulus(
     else:
         return JTAPMiceStimulus(
             name=name,
-            trial_number=int(trial_key),
+            trial_number=int(trial_key) if trial_key.isdigit() else 0,
             mouse_data=mouse_data,
             discrete_obs=discrete_obs,
             occlusion_regions=inject_occlusion,
@@ -174,6 +174,44 @@ def load_left_right_stimulus(
             skip_t=skip_t,
             pixel_density=pixel_density
         )
+
+
+def get_trial_keys_and_max_frames(stimulus_path: str, skip_t: int = 1) -> Tuple[List[str], int]:
+    """
+    Read a stimulus JSON and return sorted trial keys and the maximum number of frames
+    across all trials (after applying skip_t). Used to set max_inference_steps so JIT
+    does not recompile when trial lengths differ.
+
+    The number of trials is always taken from the actual keys in trial_data, not from
+    config (e.g. REQUESTED_NUM_TRIALS). So manually edited JSONs with added/removed
+    trials are handled correctly.
+
+    Returns:
+        trial_keys: Sorted list of trial keys (e.g. ["x1", "x2", ...] or ["1", "2", ...]).
+        max_frames: Maximum num_frames over all trials, where num_frames = (L + skip_t - 1) // skip_t.
+    """
+    if not (os.path.isfile(stimulus_path) and stimulus_path.endswith(".json")):
+        raise ValueError(f"Only .json stimulus files are supported, found: {stimulus_path!r}")
+    with open(stimulus_path, "r") as f:
+        data = json.load(f)
+    if "trial_data" not in data:
+        raise ValueError(f"JSON is missing 'trial_data' key. Found keys: {list(data.keys())}")
+    trial_data = data["trial_data"]
+
+    def _num_frames(length: int) -> int:
+        return (length + skip_t - 1) // skip_t
+
+    def _sort_key(k: str):
+        if k.startswith("x") and len(k) > 1 and k[1:].isdigit():
+            return int(k[1:])
+        if k.isdigit():
+            return int(k)
+        return 0
+
+    trial_keys = sorted(trial_data.keys(), key=_sort_key)
+    max_frames = max(_num_frames(len(trial_data[k])) for k in trial_keys) if trial_keys else 0
+    return trial_keys, max_frames
+
 
 def create_mice_video_from_positions(
     positions,
